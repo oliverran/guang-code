@@ -39,9 +39,12 @@ type MiniMaxChunk = {
 export class MiniMaxProvider implements LLMProvider {
   readonly id = 'minimax' as const
   private apiKey: string
+  private baseUrl: string
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, baseUrl?: string) {
     this.apiKey = apiKey
+    // Use the provided base URL, or fallback to the default global one
+    this.baseUrl = baseUrl || MINIMAX_BASE_URL
   }
 
   async *streamChat(opts: {
@@ -115,7 +118,15 @@ export class MiniMaxProvider implements LLMProvider {
     }
 
     try {
-      const response = await fetch(`${MINIMAX_BASE_URL}/chat/completions`, {
+      // Clean up the trailing slash if user provided one in baseUrl
+      const normalizedBaseUrl = this.baseUrl.replace(/\/$/, '')
+      
+      // Some proxy setups include /chat/completions in the baseUrl already
+      const endpoint = normalizedBaseUrl.endsWith('/chat/completions') 
+        ? normalizedBaseUrl 
+        : `${normalizedBaseUrl}/chat/completions`
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

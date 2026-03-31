@@ -76,7 +76,7 @@ export async function setDefaultMode(mode: PermissionMode): Promise<void> {
 export function inferProvider(model: string): ProviderId {
   const m = model.toLowerCase()
   if (m.startsWith('claude')) return 'anthropic'
-  if (m.startsWith('gpt-') || m.startsWith('o1') || m.startsWith('o3') || m.startsWith('o4')) return 'openai'
+  if (m.startsWith('gpt') || m.startsWith('o1') || m.startsWith('o3') || m.startsWith('o4')) return 'openai'
   // MiniMax model names: "MiniMax-Text-01", "abab6.5s-chat", "abab5.5s-chat", etc.
   if (m.startsWith('minimax') || m.startsWith('abab')) return 'minimax'
   return 'openai-compatible'

@@ -27,6 +27,7 @@ export const KNOWN_MODELS: Array<{
   { id: 'claude-3-5-haiku-20241022',    provider: 'anthropic', displayName: 'Claude 3.5 Haiku',        contextWindow: '200K', pricing: '$0.8/$4 per 1M'  },
   { id: 'claude-3-opus-20240229',       provider: 'anthropic', displayName: 'Claude 3 Opus',           contextWindow: '200K', pricing: '$15/$75 per 1M'  },
   // ── OpenAI ───────────────────────────────────────────────
+  { id: 'gpt-5.3',                      provider: 'openai',    displayName: 'GPT-5.3',                contextWindow: '128K', pricing: '$Unknown'        },
   { id: 'gpt-4o',                       provider: 'openai',    displayName: 'GPT-4o',                  contextWindow: '128K', pricing: '$5/$15 per 1M'   },
   { id: 'gpt-4o-mini',                  provider: 'openai',    displayName: 'GPT-4o Mini',             contextWindow: '128K', pricing: '$0.15/$0.6 per 1M'},
   { id: 'gpt-4-turbo',                  provider: 'openai',    displayName: 'GPT-4 Turbo',             contextWindow: '128K', pricing: '$10/$30 per 1M'  },
@@ -35,6 +36,7 @@ export const KNOWN_MODELS: Array<{
   // ── MiniMax ──────────────────────────────────────────────
   { id: 'MiniMax-Text-01',              provider: 'minimax',   displayName: 'MiniMax Text-01',         contextWindow: '1M',   pricing: '¥1/¥8 per 1M'   },
   { id: 'abab6.5s-chat',               provider: 'minimax',   displayName: 'MiniMax ABAB6.5s',        contextWindow: '245K', pricing: '¥1/¥8 per 1M'   },
+  { id: 'minimax-m2.7',                 provider: 'minimax',   displayName: 'MiniMax m2.7',            contextWindow: '245K', pricing: 'Unknown'        },
   // ── OpenAI-compatible (popular open/3rd-party) ───────────
   { id: 'deepseek-chat',               provider: 'openai-compatible', displayName: 'DeepSeek-V3',     contextWindow: '64K',  pricing: '$0.27/$1.1 per 1M'},
   { id: 'deepseek-reasoner',           provider: 'openai-compatible', displayName: 'DeepSeek-R1',     contextWindow: '64K',  pricing: '$0.55/$2.19 per 1M'},
@@ -65,11 +67,19 @@ export function createProvider(
     case 'anthropic':
       return new AnthropicProvider(apiKey)
 
-    case 'openai':
-      return new OpenAIProvider(apiKey)
+    case 'openai': {
+      const baseUrl =
+        config.providers['openai']?.baseUrl ??
+        process.env.OPENAI_BASE_URL
+      return new OpenAIProvider(apiKey, baseUrl ? { baseUrl } : undefined)
+    }
 
-    case 'minimax':
-      return new MiniMaxProvider(apiKey)
+    case 'minimax': {
+      const baseUrl =
+        config.providers['minimax']?.baseUrl ??
+        process.env.MINIMAX_BASE_URL
+      return new MiniMaxProvider(apiKey, baseUrl)
+    }
 
     case 'openai-compatible': {
       const baseUrl =
