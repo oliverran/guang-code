@@ -1,0 +1,36 @@
+{
+  "name": "guang-code",
+  "version": "1.0.0",
+  "description": "Guang Code — Terminal AI Coding Assistant",
+  "main": "dist/main.js",
+  "bin": {
+    "gc": "./dist/main.js",
+    "guang": "./dist/main.js"
+  },
+  "scripts": {
+    "build": "bash build.sh",
+    "start": "node dist/main.js",
+    "dev": "node --watch dist/main.js",
+    "install-global": "bash build.sh && npm link"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "figures": "^6.1.0",
+    "glob": "^11.0.0",
+    "ink": "^5.0.1",
+    "ink-text-input": "^6.0.0",
+    "openai": "^6.33.0",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "typescript": "^5.4.0"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,131 @@
+// ============================================================
+//  Guang Code — Main Entry Point
+// ============================================================
+
+import React from 'react'
+import { render } from 'ink'
+import { Command } from 'commander'
+import { randomUUID } from 'crypto'
+import { resolve } from 'path'
+import { App } from './components/App.js'
+import type { AppState } from './types/index.js'
+import { loadSession } from './utils/sessionStorage.js'
+import { loadConfig, CONFIG_PATH } from './utils/config.js'
+
+// ── CLI setup ────────────────────────────────────────────────
+const program = new Command()
+
+program
+  .name('guang')
+  .description('Guang Code — Terminal AI Coding Assistant')
+  .version('1.0.0')
+  .option('-k, --api-key <key>', 'API key override for current session (any provider)')
+  .option('-m, --model <model>', 'AI model to use (overrides config default)')
+  .option('--auto', 'Start in auto permission mode (no confirmations)')
+  .option('--plan', 'Start in plan mode (read-only until approved)')
+  .option('-r, --resume <sessionId>', 'Resume a previous session by ID')
+  .option('--cwd <path>', 'Working directory (defaults to process.cwd())')
+  .argument('[prompt]', 'Initial prompt to send immediately')
+
+program.parse()
+
+const opts = program.opts()
+const [initialPrompt] = program.args
+
+// ── Load config ───────────────────────────────────────────────
+const config = await loadConfig()
+
+// ── Resolve model ─────────────────────────────────────────────
+const model = (opts.model as string | undefined) ?? config.defaultModel
+
+// ── Permission mode ───────────────────────────────────────────
+const permissionMode = opts.auto
+  ? ('auto' as const)
+  : opts.plan
+    ? ('plan' as const)
+    : config.defaultMode
+
+// ── Working directory ─────────────────────────────────────────
+const cwd = opts.cwd ? resolve(opts.cwd as string) : process.cwd()
+
+// ── Validate: at least one API key must exist for the chosen model ─
+// (We do this lazily — the error surfaces when the first query runs)
+
+// ── Initial app state ─────────────────────────────────────────
+async function buildInitialState(): Promise<AppState> {
+  const base: AppState = {
+    messages: [],
+    isLoading: false,
+    permissionMode,
+    model,
+    providerConfig: config,
+    inputTokens: 0,
+    outputTokens: 0,
+    cwd,
+    sessionId: randomUUID(),
+    pendingPermission: null,
+    error: null,
+    spinnerText: '',
+    planApproved: false,
+  }
+
+  // Resume previous session
+  if (opts.resume) {
+    const saved = await loadSession(opts.resume as string)
+    if (saved) {
+      console.log(`  ↩  Resuming session ${saved.id.slice(0, 8)} (${saved.messages.length} messages)`)
+      return {
+        ...base,
+        sessionId: saved.id,
+        messages: saved.messages,
+        inputTokens: saved.inputTokens,
+        outputTokens: saved.outputTokens,
+        model: saved.model,
+        cwd: saved.cwd,
+      }
+    } else {
+      console.error(`  ✗  Session not found: ${opts.resume}`)
+    }
+  }
+
+  if (initialPrompt) {
+    base.messages.push({
+      id: randomUUID(),
+      role: 'user',
+      content: initialPrompt,
+      timestamp: Date.now(),
+    })
+  }
+
+  return base
+}
+
+// ── Boot ──────────────────────────────────────────────────────
+async function main() {
+  process.on('uncaughtException', (err) => {
+    if (
+      err.message?.includes('write after end') ||
+      err.message?.includes('Cannot read properties') ||
+      err.message?.includes('Raw mode is not supported')
+    ) return
+    console.error('Unexpected error:', err.message)
+  })
+
+  const initialState = await buildInitialState()
+
+  const { unmount } = render(
+    <App
+      initialState={initialState}
+      apiKeyOverride={opts.apiKey as string | undefined}
+    />,
+    { exitOnCtrlC: false },
+  )
+
+  process.on('SIGINT', () => { unmount(); process.exit(0) })
+  process.on('SIGTERM', () => { unmount(); process.exit(0) })
+}
+
+main().catch(err => {
+  console.error('Fatal error:', err.message)
+  process.exit(1)
+})
