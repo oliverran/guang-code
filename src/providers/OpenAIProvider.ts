@@ -117,18 +117,22 @@ export class OpenAIProvider implements LLMProvider {
 
       // Accumulate tool call deltas by index
       const toolCallAccum: Record<number, { id: string; name: string; argsRaw: string }> = {}
+      let lastFinishReason = 'end_turn'
 
       for await (const chunk of stream) {
         if (signal?.aborted) break
 
-        const delta = chunk.choices[0]?.delta
+        const delta = chunk.choices[0]?.delta as Record<string, any> | undefined
+        const chunkFinishReason = chunk.choices[0]?.finish_reason
+        if (chunkFinishReason) lastFinishReason = chunkFinishReason
+
         if (!delta) {
           // usage chunk
           const usage = (chunk as { usage?: { prompt_tokens?: number; completion_tokens?: number } }).usage
           if (usage) {
             yield {
               type: 'done',
-              stopReason: 'end_turn',
+              stopReason: lastFinishReason,
               inputTokens: usage.prompt_tokens ?? 0,
               outputTokens: usage.completion_tokens ?? 0,
             }

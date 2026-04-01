@@ -2,18 +2,21 @@
 //  Guang Code — Main REPL App Component
 // ============================================================
 
-import React, { useState, useCallback, useRef } from 'react'
-import { Box, Text, useInput } from 'ink'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
+import { Box, Text, useInput, Spacer } from 'ink'
 import TextInput from 'ink-text-input'
+import figures from 'figures'
 import type { AppState, SessionMessage, PendingPermission } from '../types/index.js'
 import { MessageView } from './Message.js'
 import { Spinner } from './Spinner.js'
 import { PermissionRequest } from './PermissionRequest.js'
 import { StatusBar } from './StatusBar.js'
 import { runQuery } from '../utils/QueryEngine.js'
+import { loadProjectInstructions } from '../utils/projectInstructions.js'
 import { findSlashCommand } from '../commands/slashCommands.js'
 import { saveSession } from '../utils/sessionStorage.js'
 import { randomUUID } from 'crypto'
+import { onSubagentEvent } from '../utils/subagents.js'
 
 type Props = {
   initialState: AppState
@@ -29,6 +32,97 @@ export function App({ initialState, apiKeyOverride }: Props) {
   const [streamingText, setStreamingText] = useState('')
   const [spinnerText, setSpinnerText] = useState('')
   const abortRef = useRef<AbortController | null>(null)
+  const bgSeenRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    const off = onSubagentEvent(e => {
+      if (e.type === 'started') {
+        setState(prev => ({
+          ...prev,
+          messages: [
+            ...prev.messages,
+            {
+              id: randomUUID(),
+              role: 'assistant',
+              content: `[Tool: Task]\nInput: ${JSON.stringify({ id: e.id, run_in_background: true, description: e.description }, null, 2)}`,
+              timestamp: Date.now(),
+              toolUseId: e.id,
+            },
+          ],
+        }))
+        return
+      }
+
+      if (e.type === 'named') {
+        setState(prev => ({
+          ...prev,
+          messages: [
+            ...prev.messages,
+            {
+              id: randomUUID(),
+              role: 'assistant',
+              content: `[Task ${e.id} named]\n\n${e.name}`,
+              timestamp: Date.now(),
+              toolUseId: e.id,
+            },
+          ],
+        }))
+        return
+      }
+
+      if (e.type === 'progress') {
+        const key = `${e.id}:${e.message}`
+        if (bgSeenRef.current.has(key)) return
+        bgSeenRef.current.add(key)
+        setState(prev => ({
+          ...prev,
+          messages: [
+            ...prev.messages,
+            {
+              id: randomUUID(),
+              role: 'assistant',
+              content: `[Tool: Task]\n${e.message}`,
+              timestamp: Date.now(),
+              toolUseId: e.id,
+            },
+          ],
+        }))
+        return
+      }
+
+      if (e.type === 'completed') {
+        setState(prev => ({
+          ...prev,
+          messages: [
+            ...prev.messages,
+            {
+              id: randomUUID(),
+              role: 'assistant',
+              content: `[Task ${e.id} completed]\n\n${e.report}`,
+              timestamp: Date.now(),
+            },
+          ],
+        }))
+        return
+      }
+
+      if (e.type === 'failed') {
+        setState(prev => ({
+          ...prev,
+          messages: [
+            ...prev.messages,
+            {
+              id: randomUUID(),
+              role: 'assistant',
+              content: `[Task ${e.id} failed]\n\n${e.error}`,
+              timestamp: Date.now(),
+            },
+          ],
+        }))
+      }
+    })
+    return off
+  }, [])
 
   // ── Keyboard input ─────────────────────────────────────────
   useInput((input: string, key: { ctrl: boolean; upArrow: boolean; downArrow: boolean }) => {
@@ -59,14 +153,33 @@ export function App({ initialState, apiKeyOverride }: Props) {
   // ── Submit ─────────────────────────────────────────────────
   const handleSubmit = useCallback(async (value: string) => {
     const trimmed = value.trim()
-    if (!trimmed || state.isLoading) return
+    if (!trimmed) return
+
+    if (state.pendingPermission) {
+      // If we are waiting for permission, intercept input to resolve it
+      const input = trimmed.toLowerCase()
+      if (input === 'y') {
+        state.pendingPermission.resolve('allow_once')
+      } else if (input === 'n') {
+        state.pendingPermission.resolve('deny')
+      } else if (input === 'a') {
+        state.pendingPermission.resolve('always_allow')
+      } else {
+        // Default to deny if invalid input when expecting permission
+        state.pendingPermission.resolve('deny')
+      }
+      setInputValue('')
+      return
+    }
+
+    if (state.isLoading) return
 
     setInputValue('')
     setHistoryIndex(-1)
     setInputHistory(prev => [...prev.slice(-99), trimmed])
 
     // Slash command?
-    const slashMatch = findSlashCommand(trimmed)
+    const slashMatch = findSlashCommand(trimmed, state.cwd)
     if (slashMatch) {
       try {
         const args = trimmed.slice(slashMatch.command.name.length + 1).trim()
@@ -102,8 +215,8 @@ export function App({ initialState, apiKeyOverride }: Props) {
         apiKeyOverride,
         signal: abort.signal,
         onPermissionRequest: async (toolName, description) => {
-          if (state.permissionMode === 'auto') return true
-          return new Promise<boolean>((resolve) => {
+          if (state.permissionMode === 'auto') return 'always_allow'
+          return new Promise<'allow_once' | 'always_allow' | 'deny'>((resolve) => {
             const pending: PendingPermission = {
               id: randomUUID(), toolName, description,
               resolve: (approved) => {
@@ -172,6 +285,8 @@ export function App({ initialState, apiKeyOverride }: Props) {
     m => m.role !== 'system' || m.content.toString().startsWith('[Conversation'),
   )
 
+  const hasInstructions = !!loadProjectInstructions(state.cwd)
+
   return (
     <Box flexDirection="column" width="100%">
       <Box flexDirection="column" flexGrow={1} paddingX={1}>
@@ -187,6 +302,9 @@ export function App({ initialState, apiKeyOverride }: Props) {
             <Text> </Text>
             <Text color="gray">  Your AI coding assistant. Type <Text color="white">a task</Text> to get started.</Text>
             <Text color="gray">  Type <Text color="white">/help</Text> for commands · <Text color="white">/keys</Text> to manage API keys · <Text color="white">/providers</Text> to see models</Text>
+            {hasInstructions && (
+              <Text color="green" dimColor>  {figures.tick} Loaded instructions (CLAUDE.md/.claude/rules/)</Text>
+            )}
             <Text> </Text>
           </Box>
         )}
@@ -195,7 +313,7 @@ export function App({ initialState, apiKeyOverride }: Props) {
 
         {state.isLoading && streamingText && (
           <Box flexDirection="column" marginBottom={1}>
-            <Text color="cyan" bold>◆ Guang Code</Text>
+            <Text color="cyan" bold>{figures.square} Guang Code</Text>
             <Box paddingLeft={2} flexDirection="column">
               <Text>{streamingText}</Text>
               <Text color="cyan" dimColor>▌</Text>
@@ -212,14 +330,14 @@ export function App({ initialState, apiKeyOverride }: Props) {
 
       {state.error && (
         <Box paddingX={1} marginBottom={1}>
-          <Text color="red">✗ {state.error}</Text>
+          <Text color="red">{figures.cross} {state.error}</Text>
         </Box>
       )}
 
       <StatusBar state={state} />
 
       <Box paddingX={1}>
-        <Text color="green" bold>{state.permissionMode === 'plan' ? '📋 ' : '❯ '}</Text>
+        <Text color="green" bold>{state.permissionMode === 'plan' ? '📋 ' : `${figures.pointer} `}</Text>
         {state.isLoading ? (
           <Text color="gray" dimColor>Press Ctrl+C to cancel…</Text>
         ) : (

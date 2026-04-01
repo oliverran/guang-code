@@ -7,6 +7,8 @@ import { render } from 'ink'
 import { Command } from 'commander'
 import { randomUUID } from 'crypto'
 import { resolve } from 'path'
+import chalk from 'chalk'
+import figures from 'figures'
 import { App } from './components/App.js'
 import type { AppState } from './types/index.js'
 import { loadSession } from './utils/sessionStorage.js'
@@ -73,7 +75,7 @@ async function buildInitialState(): Promise<AppState> {
   if (opts.resume) {
     const saved = await loadSession(opts.resume as string)
     if (saved) {
-      console.log(`  ↩  Resuming session ${saved.id.slice(0, 8)} (${saved.messages.length} messages)`)
+      console.log(`  ${chalk.cyan(figures.arrowLeft)}  Resuming session ${chalk.bold(saved.id.slice(0, 8))} (${saved.messages.length} messages)`)
       return {
         ...base,
         sessionId: saved.id,
@@ -84,7 +86,7 @@ async function buildInitialState(): Promise<AppState> {
         cwd: saved.cwd,
       }
     } else {
-      console.error(`  ✗  Session not found: ${opts.resume}`)
+      console.error(`  ${chalk.red(figures.cross)}  Session not found: ${opts.resume}`)
     }
   }
 
@@ -108,7 +110,7 @@ async function main() {
       err.message?.includes('Cannot read properties') ||
       err.message?.includes('Raw mode is not supported')
     ) return
-    console.error('Unexpected error:', err.message)
+    console.error(chalk.red(`${figures.cross} Unexpected error:`), err.message)
   })
 
   const initialState = await buildInitialState()
@@ -126,6 +128,6 @@ async function main() {
 }
 
 main().catch(err => {
-  console.error('Fatal error:', err.message)
+  console.error(chalk.red(`${figures.cross} Fatal error:`), err.message)
   process.exit(1)
 })

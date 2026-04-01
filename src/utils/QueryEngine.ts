@@ -6,6 +6,7 @@
 import { randomUUID } from 'crypto'
 import type {
   SessionMessage,
+  ToolDef,
   ToolContext,
   PermissionMode,
   GcConfig,
@@ -17,6 +18,14 @@ import type {
 } from '../types/index.js'
 import { getTools, getToolByName } from '../tools/index.js'
 import { createProvider } from '../providers/index.js'
+import { loadProjectInstructions } from './projectInstructions.js'
+import { mcpManager } from './mcpClient.js'
+import { createMcpTools } from '../tools/McpTool.js'
+import { hooksManager } from './hooks/index.js'
+import { loadConfig, addAlwaysAllowRule } from './config.js'
+import { runSubagentSession } from './subagentRun.js'
+import { getOutputStylePrompt } from './outputStyle.js'
+import { decidePermission, loadProjectPermissionRules } from './permissions.js'
 
 // ── System Prompt ──────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are Guang Code, a powerful AI coding assistant running in the terminal. You help users with software engineering tasks including:
@@ -40,6 +49,7 @@ const SYSTEM_PROMPT = `You are Guang Code, a powerful AI coding assistant runnin
 - Prefer Edit over Write for small changes to existing files  
 - Use LS to understand project structure before diving into files
 - Use Grep to find where things are defined or used
+- Use Task to delegate focused research or sub-tasks to a sub-agent
 - When running Bash commands, prefer short, safe commands and explain what they do
 
 ## Style
@@ -48,7 +58,11 @@ const SYSTEM_PROMPT = `You are Guang Code, a powerful AI coding assistant runnin
 - Don't repeat yourself unnecessarily
 - When you encounter errors, analyze them and try to fix them
 
+{{OUTPUT_STYLE}}
+
 Current working directory: {{CWD}}
+
+{{PROJECT_INSTRUCTIONS}}
 `
 
 export type QueryOptions = {
@@ -59,12 +73,15 @@ export type QueryOptions = {
   providerConfig: GcConfig
   /** Optional API key override (from --api-key CLI flag) */
   apiKeyOverride?: string
-  onPermissionRequest: (toolName: string, description: string) => Promise<boolean>
+  onPermissionRequest: (toolName: string, description: string) => Promise<boolean | 'always_allow' | 'allow_once' | 'deny'>
   onStreamChunk: OnStreamChunk
   signal?: AbortSignal
 }
 
 const MAX_TOOL_ITERATIONS = 20
+const AUTO_COMPACT_CHAR_THRESHOLD = 60000
+const AUTO_COMPACT_TAIL_MESSAGES = 8
+const AUTO_COMPACT_MAX_FAILURES = 3
 
 export async function runQuery(options: QueryOptions): Promise<{
   messages: SessionMessage[]
@@ -93,8 +110,61 @@ export async function runQuery(options: QueryOptions): Promise<{
     return { messages: [], inputTokens: 0, outputTokens: 0 }
   }
 
+  const config = await loadConfig()
+  const alwaysAllowRules = config.alwaysAllowRules || []
+  const permissionRules = [
+    ...(config.permissionRules || []),
+    ...loadProjectPermissionRules(cwd),
+  ]
+  const outputStyle = getOutputStylePrompt(config.outputStyle)
+
   const tools = getTools()
-  const toolContext: ToolContext = { cwd, permissionMode, onPermissionRequest }
+  let activeTool: { name: string; input: Record<string, unknown> } | null = null
+  const toolContext: ToolContext = {
+    cwd,
+    permissionMode,
+    model,
+    providerConfig,
+    apiKeyOverride,
+    onPermissionRequest: async (toolName: string, description: string) => {
+      // 1. Check if tool is in alwaysAllowRules
+      if (alwaysAllowRules.includes(toolName)) {
+        return true
+      }
+
+      const decision = decidePermission({
+        permissionMode,
+        rules: permissionRules,
+        toolName,
+        toolInput: activeTool && activeTool.name === toolName ? activeTool.input : undefined,
+        cwd,
+      })
+      if (decision === 'allow') return true
+      if (decision === 'deny') return false
+
+      const approved = await onPermissionRequest(toolName, description)
+      if (approved === 'always_allow') {
+        await addAlwaysAllowRule(toolName)
+        return true
+      }
+      if (approved === 'allow_once') {
+        return true
+      }
+      return false
+    }
+  }
+
+  // Load MCP tools dynamically
+  await mcpManager.initializeAll(cwd)
+  const mcpClients = mcpManager.getClients()
+  for (const [serverName, client] of mcpClients.entries()) {
+    try {
+      const mcpTools = await createMcpTools(client, serverName)
+      tools.push(...mcpTools)
+    } catch (err) {
+      console.error(`Error loading tools from MCP server ${serverName}:`, err)
+    }
+  }
 
   const providerTools: ProviderTool[] = tools.map(t => ({
     name: t.name,
@@ -102,20 +172,73 @@ export async function runQuery(options: QueryOptions): Promise<{
     inputSchema: t.inputSchema,
   }))
 
-  const systemPrompt = SYSTEM_PROMPT.replace('{{CWD}}', cwd)
+  const projectInstructions = loadProjectInstructions(cwd)
+  let instructionsText = ''
+  if (projectInstructions) {
+    instructionsText = `\n## Project Instructions\nThe following instructions have been provided by the user for this specific project. You must strictly adhere to these rules:\n\n<project_instructions>\n${projectInstructions}\n</project_instructions>\n`
+  }
+
+  const systemPrompt = SYSTEM_PROMPT
+    .replace('{{CWD}}', cwd)
+    .replace('{{PROJECT_INSTRUCTIONS}}', instructionsText)
+    .replace('{{OUTPUT_STYLE}}', outputStyle.prompt)
+
+  // Initialize Hooks
+  await hooksManager.loadHooks(cwd)
+  await hooksManager.triggerEvent('SessionStart', cwd, { model })
 
   // Build conversation history in provider-agnostic format
   let chatHistory: ChatMessage[] = sessionMessagesToChatMessages(messages)
+
+  const autoDelegateEnabled = Boolean(config.autoDelegate) || process.env.GC_AUTO_DELEGATE === '1'
+  if (autoDelegateEnabled) {
+    const injected = await autoDelegateIfNeeded({
+      provider,
+      model,
+      chatHistory,
+      cwd,
+      providerConfig,
+      apiKeyOverride,
+    })
+    if (injected) {
+      chatHistory.push({ role: 'user', content: injected })
+    }
+  }
 
   let totalInput = 0
   let totalOutput = 0
   const newMessages: SessionMessage[] = []
   let iterations = 0
+  let autoCompactFailures = 0
 
   while (iterations < MAX_TOOL_ITERATIONS) {
     iterations++
 
     if (signal?.aborted) break
+
+    if (autoCompactFailures < AUTO_COMPACT_MAX_FAILURES) {
+      const size = estimateChatHistorySize(chatHistory)
+      if (size > AUTO_COMPACT_CHAR_THRESHOLD) {
+        try {
+          const { summary, postCompactHistory, droppedCount } = await autoCompactChatHistory({
+            provider,
+            model,
+            chatHistory,
+          })
+          if (summary && postCompactHistory.length > 0) {
+            chatHistory = postCompactHistory
+            newMessages.push({
+              id: randomUUID(),
+              role: 'system',
+              content: `[Conversation compacted: ${droppedCount} earlier messages summarized]`,
+              timestamp: Date.now(),
+            })
+          }
+        } catch (err: unknown) {
+          autoCompactFailures++
+        }
+      }
+    }
 
     let fullText = ''
     const pendingToolCalls: Map<string, ToolCall & { argsRaw: string }> = new Map()
@@ -212,21 +335,27 @@ export async function runQuery(options: QueryOptions): Promise<{
       }
     }
 
-    // No tool calls or stop → done
-    if (toolCallList.length === 0 || finalStopReason === 'end_turn') break
+    // No tool calls → done
+    if (toolCallList.length === 0) break
 
     // ── Execute tool calls ─────────────────────────────────────
     const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }> = []
 
     for (const tc of toolCallList) {
-      const toolDef = getToolByName(tc.name)
+      // Find tool in dynamically aggregated tools array, not just getToolByName
+      const toolDef = tools.find(t => t.name === tc.name) || getToolByName(tc.name)
       if (!toolDef) {
         toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `Tool "${tc.name}" not found`, is_error: true })
         continue
       }
 
       try {
+        activeTool = { name: tc.name, input: tc.input }
+        await hooksManager.triggerEvent('PreToolUse', cwd, { tool_name: tc.name, tool_input: tc.input })
         const result = await toolDef.execute(tc.input, toolContext)
+        await hooksManager.triggerEvent('PostToolUse', cwd, { tool_name: tc.name, tool_input: tc.input, result: result.content })
+        activeTool = null
+        
         onStreamChunk({
           type: 'tool_done',
           toolName: tc.name,
@@ -250,6 +379,7 @@ export async function runQuery(options: QueryOptions): Promise<{
           timestamp: Date.now(), toolUseId: tc.id,
         })
       } catch (err: unknown) {
+        activeTool = null
         const e = err as Error
         toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `Tool error: ${e.message}`, is_error: true })
       }
@@ -262,6 +392,7 @@ export async function runQuery(options: QueryOptions): Promise<{
   }
 
   onStreamChunk({ type: 'done', inputTokens: totalInput, outputTokens: totalOutput })
+  await hooksManager.triggerEvent('SessionEnd', cwd, { totalInput, totalOutput })
   return { messages: newMessages, inputTokens: totalInput, outputTokens: totalOutput }
 }
 
@@ -286,4 +417,271 @@ function sessionMessagesToChatMessages(messages: SessionMessage[]): ChatMessage[
   }
 
   return result
+}
+
+function estimateChatHistorySize(history: ChatMessage[]): number {
+  let total = 0
+  for (const m of history) {
+    if (m.role === 'system') continue
+    if (typeof m.content === 'string') {
+      total += m.content.length
+      continue
+    }
+    if (Array.isArray(m.content)) {
+      for (const part of m.content as Array<any>) {
+        if (typeof part?.content === 'string') total += part.content.length
+        if (typeof part?.text === 'string') total += part.text.length
+        if (typeof part?.tool_use_id === 'string') total += part.tool_use_id.length
+      }
+    }
+  }
+  return total
+}
+
+async function autoCompactChatHistory(opts: {
+  provider: LLMProvider
+  model: string
+  chatHistory: ChatMessage[]
+}): Promise<{ summary: string; postCompactHistory: ChatMessage[]; droppedCount: number }> {
+  const tail = opts.chatHistory.slice(-AUTO_COMPACT_TAIL_MESSAGES)
+  const head = opts.chatHistory.slice(0, Math.max(0, opts.chatHistory.length - tail.length))
+
+  const text = serializeChatHistoryForSummary(head)
+  const summary = await summarizeText(opts.provider, opts.model, text)
+
+  const postCompactHistory: ChatMessage[] = [
+    {
+      role: 'user',
+      content: `[Conversation summary]\n${summary}\n[/Conversation summary]`,
+    },
+    ...tail,
+  ]
+
+  return {
+    summary,
+    postCompactHistory,
+    droppedCount: head.length,
+  }
+}
+
+function serializeChatHistoryForSummary(history: ChatMessage[]): string {
+  const lines: string[] = []
+
+  for (const m of history) {
+    if (m.role === 'system') continue
+    if (typeof m.content === 'string') {
+      lines.push(`${m.role.toUpperCase()}:\n${m.content}`)
+      continue
+    }
+    if (m.role === 'assistant') {
+      const parts = m.content as Array<any>
+      const text = parts.filter(p => p.type === 'text').map(p => p.text ?? '').join('')
+      const toolUses = parts.filter(p => p.type === 'tool_use').map(p => `${p.name}(${JSON.stringify(p.input ?? {})})`).join('\n')
+      if (text.trim()) lines.push(`ASSISTANT:\n${text}`)
+      if (toolUses.trim()) lines.push(`ASSISTANT TOOLS:\n${toolUses}`)
+      continue
+    }
+    if (m.role === 'user') {
+      const parts = m.content as Array<any>
+      const toolResults = parts.map(p => `${p.tool_use_id}: ${p.is_error ? 'Error: ' : ''}${p.content}`).join('\n')
+      lines.push(`TOOL RESULTS:\n${toolResults}`)
+      continue
+    }
+  }
+
+  const joined = lines.join('\n\n')
+  if (joined.length <= AUTO_COMPACT_CHAR_THRESHOLD) return joined
+
+  const head = joined.slice(0, Math.min(20000, joined.length))
+  const tail = joined.slice(Math.max(0, joined.length - 20000))
+  const keyRefs = buildKeyReferences(joined, 15000)
+
+  const combined =
+    `[KEY REFERENCES]\n${keyRefs}\n[/KEY REFERENCES]\n\n` +
+    `[EARLY CONTEXT SNIPPET]\n${head}\n[/EARLY CONTEXT SNIPPET]\n\n` +
+    `[LATE CONTEXT SNIPPET]\n${tail}\n[/LATE CONTEXT SNIPPET]`
+
+  if (combined.length <= AUTO_COMPACT_CHAR_THRESHOLD) return combined
+  return combined.slice(0, AUTO_COMPACT_CHAR_THRESHOLD)
+}
+
+function buildKeyReferences(text: string, maxChars: number): string {
+  const fileRefs = extractFileReferences(text, 80)
+  const commands = extractCommandLikeLines(text, 60)
+  const signals = extractSignalLines(text, 80)
+
+  const parts: string[] = []
+  if (fileRefs.length > 0) {
+    parts.push('Files:\n' + fileRefs.map(s => `- ${s}`).join('\n'))
+  }
+  if (commands.length > 0) {
+    parts.push('Commands:\n' + commands.map(s => `- ${s}`).join('\n'))
+  }
+  if (signals.length > 0) {
+    parts.push('Signals:\n' + signals.map(s => `- ${s}`).join('\n'))
+  }
+
+  const out = parts.join('\n\n').trim()
+  if (out.length <= maxChars) return out
+  return out.slice(0, maxChars)
+}
+
+function extractFileReferences(text: string, limit: number): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+
+  const patterns: RegExp[] = [
+    /file:\/\/\/[^\s)>"'`]+/gi,
+    /[a-zA-Z]:\\[^\s)>"'`]+/g,
+    /\/[^\s)>"'`]+\.(ts|tsx|js|jsx|json|md|yml|yaml|toml|txt|css|scss|py|go|rs|java|kt|cs|sh|ps1|bat|cmd)\b/gi,
+  ]
+
+  for (const re of patterns) {
+    let m: RegExpExecArray | null
+    while ((m = re.exec(text)) !== null) {
+      const raw = m[0]
+      const cleaned = raw.replace(/[.,;:)\]]+$/g, '')
+      if (!cleaned) continue
+      if (seen.has(cleaned)) continue
+      seen.add(cleaned)
+      out.push(cleaned)
+      if (out.length >= limit) return out
+    }
+  }
+
+  return out
+}
+
+function extractCommandLikeLines(text: string, limit: number): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const lines = text.split('\n')
+
+  const re =
+    /\b(git|npm|npx|pnpm|yarn|node|bun|tsc|deno|python|pip|cargo|go|dotnet|java|gradle|mvn|bash|sh|pwsh|powershell)\b/i
+
+  for (const line of lines) {
+    const s = line.trim()
+    if (!s) continue
+    if (s.length > 240) continue
+    if (!re.test(s)) continue
+    if (seen.has(s)) continue
+    seen.add(s)
+    out.push(s)
+    if (out.length >= limit) break
+  }
+
+  return out
+}
+
+function extractSignalLines(text: string, limit: number): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  const lines = text.split('\n')
+
+  const re =
+    /(TODO|FIXME|BUG|ERROR|Exception|Traceback|stack|failed|denied|permission|must|should|决定|约定|必须|不要|错误|失败)/i
+
+  for (const line of lines) {
+    const s = line.trim()
+    if (!s) continue
+    if (s.length > 260) continue
+    if (!re.test(s)) continue
+    if (seen.has(s)) continue
+    seen.add(s)
+    out.push(s)
+    if (out.length >= limit) break
+  }
+
+  return out
+}
+
+async function summarizeText(provider: LLMProvider, model: string, text: string): Promise<string> {
+  let out = ''
+  const system = 'You summarize conversations for continuation in a coding assistant. Output a concise structured summary.'
+  const messages: ChatMessage[] = [
+    {
+      role: 'user',
+      content:
+        `Summarize the conversation context for future turns.\n` +
+        `Keep: goals, decisions, constraints, file paths mentioned, unfinished tasks, errors.\n` +
+        `If a [KEY REFERENCES] section exists, prioritize its facts and include important file paths/commands explicitly.\n` +
+        `Do not include tool call raw dumps unless necessary.\n\n` +
+        `CONVERSATION:\n${text}`,
+    },
+  ]
+
+  for await (const chunk of provider.streamChat({ model, system, messages, tools: [] })) {
+    if (chunk.type === 'text_delta') out += chunk.text
+    if (chunk.type === 'error') throw new Error(chunk.message)
+  }
+
+  return out.trim() || '(empty summary)'
+}
+
+async function autoDelegateIfNeeded(opts: {
+  provider: LLMProvider
+  model: string
+  chatHistory: ChatMessage[]
+  cwd: string
+  providerConfig: GcConfig
+  apiKeyOverride?: string
+}): Promise<string | null> {
+  const lastUser = findLastUserText(opts.chatHistory)
+  if (!lastUser) return null
+  if (lastUser.includes('[Auto delegated research]')) return null
+
+  const text = lastUser.trim()
+  if (text.length < 20) return null
+  if (!shouldAutoDelegate(text)) return null
+
+  const toolNames = ['LS', 'Read', 'Glob', 'Grep']
+  const tools = toolNames.map(n => getToolByName(n)).filter(Boolean) as any as ToolDef[]
+  if (tools.length === 0) return null
+
+  const toolContext: ToolContext = {
+    cwd: opts.cwd,
+    permissionMode: 'auto',
+    model: opts.model,
+    providerConfig: opts.providerConfig,
+    apiKeyOverride: opts.apiKeyOverride,
+    onPermissionRequest: async () => true,
+  }
+
+  const system =
+    'You are a research sub-agent for a terminal coding assistant. Use the available tools to inspect the local repository. Return a concise report with key findings and file paths.'
+
+  const chatHistory: ChatMessage[] = [
+    { role: 'user', content: `Task:\n${text}` },
+  ]
+
+  const report = await runSubagentSession({
+    provider: opts.provider,
+    model: opts.model,
+    system,
+    chatHistory,
+    tools,
+    toolContext,
+    maxIterations: 6,
+  })
+
+  return `[Auto delegated research]\n${report}`
+}
+
+function findLastUserText(history: ChatMessage[]): string | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i]
+    if (m.role !== 'user') continue
+    if (typeof m.content === 'string') return m.content
+  }
+  return null
+}
+
+function shouldAutoDelegate(text: string): boolean {
+  const t = text.toLowerCase()
+  const keywords = [
+    '架构', '结构', '梳理', '分析', '定位', '排查', '全局', '整体', '哪里实现', '怎么实现',
+    'architecture', 'survey', 'codebase', 'where is', 'how does',
+  ]
+  return keywords.some(k => t.includes(k))
 }

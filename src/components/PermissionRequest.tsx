@@ -4,6 +4,7 @@
 
 import React from 'react'
 import { Box, Text, useInput } from 'ink'
+import figures from 'figures'
 import type { PendingPermission } from '../types/index.js'
 
 type Props = {
@@ -13,9 +14,11 @@ type Props = {
 export function PermissionRequest({ permission }: Props) {
   useInput((input, key) => {
     if (input === 'y' || input === 'Y' || key.return) {
-      permission.resolve(true)
+      permission.resolve('allow_once')
     } else if (input === 'n' || input === 'N' || key.escape) {
-      permission.resolve(false)
+      permission.resolve('deny')
+    } else if (input === 'a' || input === 'A') {
+      permission.resolve('always_allow')
     }
   })
 
@@ -30,17 +33,19 @@ export function PermissionRequest({ permission }: Props) {
       paddingY={1}
       marginY={1}
     >
-      <Text color="yellow" bold>⚠  Permission Request</Text>
+      <Text color="yellow" bold>{figures.warning}  Permission Request</Text>
       <Text color="yellow" bold>Tool: {permission.toolName}</Text>
       <Box marginY={1} flexDirection="column">
         {lines.map((line, i) => (
-          <Text key={i} color="white">{line}</Text>
+          <Text key={i} color="gray">{line}</Text>
         ))}
       </Box>
       <Box>
-        <Text color="green" bold>[Y] </Text>
-        <Text color="green">Allow  </Text>
-        <Text color="red" bold>[N] </Text>
+        <Text color="green" bold>[Y/{figures.tick}] </Text>
+        <Text color="green">Allow Once  </Text>
+        <Text color="cyan" bold>[A] </Text>
+        <Text color="cyan">Always Allow  </Text>
+        <Text color="red" bold>[N/{figures.cross}] </Text>
         <Text color="red">Deny</Text>
       </Box>
     </Box>

@@ -1,0 +1,361 @@
+[1mdiff --git a/package-lock.json b/package-lock.json[m
+[1mindex 69d95e0..c463e25 100644[m
+[1m--- a/package-lock.json[m
+[1m+++ b/package-lock.json[m
+[36m@@ -25,7 +25,6 @@[m
+       "devDependencies": {[m
+         "@types/node": "^20.0.0",[m
+         "@types/react": "^18.2.0",[m
+[31m-        "ts-node": "^10.9.2",[m
+         "typescript": "^5.4.0"[m
+       },[m
+       "engines": {[m
+[36m@@ -75,19 +74,6 @@[m
+       "integrity": "sha512-JlCMO+ehdEIKqlFxk6IfVoAUVmgz7cU7zD/h9XZ0qzeosSHmUJVOzSQvvYSYWXkFXC+IfLKSIffhv0sVZup6pA==",[m
+       "license": "MIT"[m
+     },[m
+[31m-    "node_modules/@cspotcode/source-map-support": {[m
+[31m-      "version": "0.8.1",[m
+[31m-      "resolved": "https://registry.npmjs.org/@cspotcode/source-map-support/-/source-map-support-0.8.1.tgz",[m
+[31m-      "integrity": "sha512-IchNf6dN4tHoMFIn/7OE8LWZ19Y6q/67Bmf6vnGREv8RSbBVb9LPJxEcnwrcwX6ixSvaiGoomAUvu4YSxXrVgw==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT",[m
+[31m-      "dependencies": {[m
+[31m-        "@jridgewell/trace-mapping": "0.3.9"[m
+[31m-      },[m
+[31m-      "engines": {[m
+[31m-        "node": ">=12"[m
+[31m-      }[m
+[31m-    },[m
+     "node_modules/@isaacs/cliui": {[m
+       "version": "9.0.0",[m
+       "resolved": "https://registry.npmjs.org/@isaacs/cliui/-/cliui-9.0.0.tgz",[m
+[36m@@ -97,62 +83,6 @@[m
+         "node": ">=18"[m
+       }[m
+     },[m
+[31m-    "node_modules/@jridgewell/resolve-uri": {[m
+[31m-      "version": "3.1.2",[m
+[31m-      "resolved": "https://registry.npmjs.org/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz",[m
+[31m-      "integrity": "sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT",[m
+[31m-      "engines": {[m
+[31m-        "node": ">=6.0.0"[m
+[31m-      }[m
+[31m-    },[m
+[31m-    "node_modules/@jridgewell/sourcemap-codec": {[m
+[31m-      "version": "1.5.5",[m
+[31m-      "resolved": "https://registry.npmjs.org/@jridgewell/sourcemap-codec/-/sourcemap-codec-1.5.5.tgz",[m
+[31m-      "integrity": "sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT"[m
+[31m-    },[m
+[31m-    "node_modules/@jridgewell/trace-mapping": {[m
+[31m-      "version": "0.3.9",[m
+[31m-      "resolved": "https://registry.npmjs.org/@jridgewell/trace-mapping/-/trace-mapping-0.3.9.tgz",[m
+[31m-      "integrity": "sha512-3Belt6tdc8bPgAtbcmdtNJlirVoTmEb5e2gC94PnkwEW9jI6CAHUeoG85tjWP5WquqfavoMtMwiG4P926ZKKuQ==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT",[m
+[31m-      "dependencies": {[m
+[31m-        "@jridgewell/resolve-uri": "^3.0.3",[m
+[31m-        "@jridgewell/sourcemap-codec": "^1.4.10"[m
+[31m-      }[m
+[31m-    },[m
+[31m-    "node_modules/@tsconfig/node10": {[m
+[31m-      "version": "1.0.12",[m
+[31m-      "resolved": "https://registry.npmjs.org/@tsconfig/node10/-/node10-1.0.12.tgz",[m
+[31m-      "integrity": "sha512-UCYBaeFvM11aU2y3YPZ//O5Rhj+xKyzy7mvcIoAjASbigy8mHMryP5cK7dgjlz2hWxh1g5pLw084E0a/wlUSFQ==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT"[m
+[31m-    },[m
+[31m-    "node_modules/@tsconfig/node12": {[m
+[31m-      "version": "1.0.11",[m
+[31m-      "resolved": "https://registry.npmjs.org/@tsconfig/node12/-/node12-1.0.11.tgz",[m
+[31m-      "integrity": "sha512-cqefuRsh12pWyGsIoBKJA9luFu3mRxCA+ORZvA4ktLSzIuCUtWVxGIuXigEwO5/ywWFMZ2QEGKWvkZG1zDMTag==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT"[m
+[31m-    },[m
+[31m-    "node_modules/@tsconfig/node14": {[m
+[31m-      "version": "1.0.3",[m
+[31m-      "resolved": "https://registry.npmjs.org/@tsconfig/node14/-/node14-1.0.3.tgz",[m
+[31m-      "integrity": "sha512-ysT8mhdixWK6Hw3i1V2AeRqZ5WfXg1G43mqoYlM2nc6388Fq5jcXyr5mRsqViLx/GJYdoL0bfXD8nmF+Zn/Iow==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT"[m
+[31m-    },[m
+[31m-    "node_modules/@tsconfig/node16": {[m
+[31m-      "version": "1.0.4",[m
+[31m-      "resolved": "https://registry.npmjs.org/@tsconfig/node16/-/node16-1.0.4.tgz",[m
+[31m-      "integrity": "sha512-vxhUy4J8lyeyinH7Azl1pdd43GJhZH/tP2weN8TntQblOY+A0XbT8DJk1/oCPuOOyg/Ja757rG0CgHcWC8OfMA==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT"[m
+[31m-    },[m
+     "node_modules/@types/node": {[m
+       "version": "20.19.37",[m
+       "resolved": "https://registry.npmjs.org/@types/node/-/node-20.19.37.tgz",[m
+[36m@@ -202,32 +132,6 @@[m
+         "node": ">=6.5"[m
+       }[m
+     },[m
+[31m-    "node_modules/acorn": {[m
+[31m-      "version": "8.16.0",[m
+[31m-      "resolved": "https://registry.npmjs.org/acorn/-/acorn-8.16.0.tgz",[m
+[31m-      "integrity": "sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT",[m
+[31m-      "bin": {[m
+[31m-        "acorn": "bin/acorn"[m
+[31m-      },[m
+[31m-      "engines": {[m
+[31m-        "node": ">=0.4.0"[m
+[31m-      }[m
+[31m-    },[m
+[31m-    "node_modules/acorn-walk": {[m
+[31m-      "version": "8.3.5",[m
+[31m-      "resolved": "https://registry.npmjs.org/acorn-walk/-/acorn-walk-8.3.5.tgz",[m
+[31m-      "integrity": "sha512-HEHNfbars9v4pgpW6SO1KSPkfoS0xVOM/9UzkJltjlsHZmJasxg8aXkuZa7SMf8vKGIBhpUsPluQSqhJFCqebw==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT",[m
+[31m-      "dependencies": {[m
+[31m-        "acorn": "^8.11.0"[m
+[31m-      },[m
+[31m-      "engines": {[m
+[31m-        "node": ">=0.4.0"[m
+[31m-      }[m
+[31m-    },[m
+     "node_modules/agentkeepalive": {[m
+       "version": "4.6.0",[m
+       "resolved": "https://registry.npmjs.org/agentkeepalive/-/agentkeepalive-4.6.0.tgz",[m
+[36m@@ -279,13 +183,6 @@[m
+         "url": "https://github.com/chalk/ansi-styles?sponsor=1"[m
+       }[m
+     },[m
+[31m-    "node_modules/arg": {[m
+[31m-      "version": "4.1.3",[m
+[31m-      "resolved": "https://registry.npmjs.org/arg/-/arg-4.1.3.tgz",[m
+[31m-      "integrity": "sha512-58S9QDqG0Xx27YwPSt9fJxivjYl432YCwfDMfZ+71RAqUrZef7LrKQZ3LHLOwCS4FLNBplP533Zx895SeOCHvA==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT"[m
+[31m-    },[m
+     "node_modules/asynckit": {[m
+       "version": "0.4.0",[m
+       "resolved": "https://registry.npmjs.org/asynckit/-/asynckit-0.4.0.tgz",[m
+[36m@@ -451,13 +348,6 @@[m
+         "node": "^12.20.0 || ^14.13.1 || >=16.0.0"[m
+       }[m
+     },[m
+[31m-    "node_modules/create-require": {[m
+[31m-      "version": "1.1.1",[m
+[31m-      "resolved": "https://registry.npmjs.org/create-require/-/create-require-1.1.1.tgz",[m
+[31m-      "integrity": "sha512-dcKFX3jn0MpIaXjisoRvexIJVEKzaq7z2rZKxf+MSr9TkdmHmsU4m2lcLojrj/FHl8mk5VxMmYA+ftRkP/3oKQ==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT"[m
+[31m-    },[m
+     "node_modules/cross-spawn": {[m
+       "version": "7.0.6",[m
+       "resolved": "https://registry.npmjs.org/cross-spawn/-/cross-spawn-7.0.6.tgz",[m
+[36m@@ -488,16 +378,6 @@[m
+         "node": ">=0.4.0"[m
+       }[m
+     },[m
+[31m-    "node_modules/diff": {[m
+[31m-      "version": "4.0.4",[m
+[31m-      "resolved": "https://registry.npmjs.org/diff/-/diff-4.0.4.tgz",[m
+[31m-      "integrity": "sha512-X07nttJQkwkfKfvTPG/KSnE2OMdcUCao6+eXF3wmnIQRn2aPAHH3VxDbDOdegkd6JbPsXqShpvEOHfAT+nCNwQ==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "BSD-3-Clause",[m
+[31m-      "engines": {[m
+[31m-        "node": ">=0.3.1"[m
+[31m-      }[m
+[31m-    },[m
+     "node_modules/dunder-proto": {[m
+       "version": "1.0.1",[m
+       "resolved": "https://registry.npmjs.org/dunder-proto/-/dunder-proto-1.0.1.tgz",[m
+[36m@@ -987,13 +867,6 @@[m
+         "node": "20 || >=22"[m
+       }[m
+     },[m
+[31m-    "node_modules/make-error": {[m
+[31m-      "version": "1.3.6",[m
+[31m-      "resolved": "https://registry.npmjs.org/make-error/-/make-error-1.3.6.tgz",[m
+[31m-      "integrity": "sha512-s8UhlNe7vPKomQhC1qFelMokr/Sc3AgNbso3n74mVPA5LTZwkB9NlXf4XPamLxJE8h0gh73rM94xvwRT2CVInw==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "ISC"[m
+[31m-    },[m
+     "node_modules/math-intrinsics": {[m
+       "version": "1.1.0",[m
+       "resolved": "https://registry.npmjs.org/math-intrinsics/-/math-intrinsics-1.1.0.tgz",[m
+[36m@@ -1340,50 +1213,6 @@[m
+       "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw==",[m
+       "license": "MIT"[m
+     },[m
+[31m-    "node_modules/ts-node": {[m
+[31m-      "version": "10.9.2",[m
+[31m-      "resolved": "https://registry.npmjs.org/ts-node/-/ts-node-10.9.2.tgz",[m
+[31m-      "integrity": "sha512-f0FFpIdcHgn8zcPSbf1dRevwt047YMnaiJM3u2w2RewrB+fob/zePZcrOyQoLMMO7aBIddLcQIEK5dYjkLnGrQ==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT",[m
+[31m-      "dependencies": {[m
+[31m-        "@cspotcode/source-map-support": "^0.8.0",[m
+[31m-        "@tsconfig/node10": "^1.0.7",[m
+[31m-        "@tsconfig/node12": "^1.0.7",[m
+[31m-        "@tsconfig/node14": "^1.0.0",[m
+[31m-        "@tsconfig/node16": "^1.0.2",[m
+[31m-        "acorn": "^8.4.1",[m
+[31m-        "acorn-walk": "^8.1.1",[m
+[31m-        "arg": "^4.1.0",[m
+[31m-        "create-require": "^1.1.0",[m
+[31m-        "diff": "^4.0.1",[m
+[31m-        "make-error": "^1.1.1",[m
+[31m-        "v8-compile-cache-lib": "^3.0.1",[m
+[31m-        "yn": "3.1.1"[m
+[31m-      },[m
+[31m-      "bin": {[m
+[31m-        "ts-node": "dist/bin.js",[m
+[31m-        "ts-node-cwd": "dist/bin-cwd.js",[m
+[31m-        "ts-node-esm": "dist/bin-esm.js",[m
+[31m-        "ts-node-script": "dist/bin-script.js",[m
+[31m-        "ts-node-transpile-only": "dist/bin-transpile.js",[m
+[31m-        "ts-script": "dist/bin-script-deprecated.js"[m
+[31m-      },[m
+[31m-      "peerDependencies": {[m
+[31m-        "@swc/core": ">=1.2.50",[m
+[31m-        "@swc/wasm": ">=1.2.50",[m
+[31m-        "@types/node": "*",[m
+[31m-        "typescript": ">=2.7"[m
+[31m-      },[m
+[31m-      "peerDependenciesMeta": {[m
+[31m-        "@swc/core": {[m
+[31m-          "optional": true[m
+[31m-        },[m
+[31m-        "@swc/wasm": {[m
+[31m-          "optional": true[m
+[31m-        }[m
+[31m-      }[m
+[31m-    },[m
+     "node_modules/type-fest": {[m
+       "version": "4.41.0",[m
+       "resolved": "https://registry.npmjs.org/type-fest/-/type-fest-4.41.0.tgz",[m
+[36m@@ -1416,13 +1245,6 @@[m
+       "integrity": "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==",[m
+       "license": "MIT"[m
+     },[m
+[31m-    "node_modules/v8-compile-cache-lib": {[m
+[31m-      "version": "3.0.1",[m
+[31m-      "resolved": "https://registry.npmjs.org/v8-compile-cache-lib/-/v8-compile-cache-lib-3.0.1.tgz",[m
+[31m-      "integrity": "sha512-wa7YjyUGfNZngI/vtK0UHAN+lgDCxBPCylVXGp0zu59Fz5aiGtNXaq3DhIov063MorB+VfufLh3JlF2KdTK3xg==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT"[m
+[31m-    },[m
+     "node_modules/web-streams-polyfill": {[m
+       "version": "4.0.0-beta.3",[m
+       "resolved": "https://registry.npmjs.org/web-streams-polyfill/-/web-streams-polyfill-4.0.0-beta.3.tgz",[m
+[36m@@ -1516,16 +1338,6 @@[m
+         }[m
+       }[m
+     },[m
+[31m-    "node_modules/yn": {[m
+[31m-      "version": "3.1.1",[m
+[31m-      "resolved": "https://registry.npmjs.org/yn/-/yn-3.1.1.tgz",[m
+[31m-      "integrity": "sha512-Ux4ygGWsu2c7isFWe8Yu1YluJmqVhxqK2cLXNQA5AcC3QfbGNpM7fu0Y8b/z16pXLnFxZYvWhd3fhBY9DLmC6Q==",[m
+[31m-      "dev": true,[m
+[31m-      "license": "MIT",[m
+[31m-      "engines": {[m
+[31m-        "node": ">=6"[m
+[31m-      }[m
+[31m-    },[m
+     "node_modules/yoga-layout": {[m
+       "version": "3.2.1",[m
+       "resolved": "https://registry.npmjs.org/yoga-layout/-/yoga-layout-3.2.1.tgz",[m
+[1mdiff --git a/src/providers/MiniMaxProvider.ts b/src/providers/MiniMaxProvider.ts[m
+[1mindex 0ccd80b..473ed97 100644[m
+[1m--- a/src/providers/MiniMaxProvider.ts[m
+[1m+++ b/src/providers/MiniMaxProvider.ts[m
+[36m@@ -39,9 +39,12 @@[m [mtype MiniMaxChunk = {[m
+ export class MiniMaxProvider implements LLMProvider {[m
+   readonly id = 'minimax' as const[m
+   private apiKey: string[m
+[32m+[m[32m  private baseUrl: string[m
+ [m
+[31m-  constructor(apiKey: string) {[m
+[32m+[m[32m  constructor(apiKey: string, baseUrl?: string) {[m
+     this.apiKey = apiKey[m
+[32m+[m[32m    // Use the provided base URL, or fallback to the default global one[m
+[32m+[m[32m    this.baseUrl = baseUrl || MINIMAX_BASE_URL[m
+   }[m
+ [m
+   async *streamChat(opts: {[m
+[36m@@ -115,7 +118,15 @@[m [mexport class MiniMaxProvider implements LLMProvider {[m
+     }[m
+ [m
+     try {[m
+[31m-      const response = await fetch(`${MINIMAX_BASE_URL}/chat/completions`, {[m
+[32m+[m[32m      // Clean up the trailing slash if user provided one in baseUrl[m
+[32m+[m[32m      const normalizedBaseUrl = this.baseUrl.replace(/\/$/, '')[m
+[32m+[m[41m      [m
+[32m+[m[32m      // Some proxy setups include /chat/completions in the baseUrl already[m
+[32m+[m[32m      const endpoint = normalizedBaseUrl.endsWith('/chat/completions')[m[41m [m
+[32m+[m[32m        ? normalizedBaseUrl[m[41m [m
+[32m+[m[32m        : `${normalizedBaseUrl}/chat/completions`[m
+[32m+[m
+[32m+[m[32m      const response = await fetch(endpoint, {[m
+         method: 'POST',[m
+         headers: {[m
+           'Content-Type': 'application/json',[m
+[1mdiff --git a/src/providers/index.ts b/src/providers/index.ts[m
+[1mindex 15e48ca..295dff5 100644[m
+[1m--- a/src/providers/index.ts[m
+[1m+++ b/src/providers/index.ts[m
+[36m@@ -27,6 +27,7 @@[m [mexport const KNOWN_MODELS: Array<{[m
+   { id: 'claude-3-5-haiku-20241022',    provider: 'anthropic', displayName: 'Claude 3.5 Haiku',        contextWindow: '200K', pricing: '$0.8/$4 per 1M'  },[m
+   { id: 'claude-3-opus-20240229',       provider: 'anthropic', displayName: 'Claude 3 Opus',           contextWindow: '200K', pricing: '$15/$75 per 1M'  },[m
+   // ── OpenAI ───────────────────────────────────────────────[m
+[32m+[m[32m  { id: 'gpt-5.3',                      provider: 'openai',    displayName: 'GPT-5.3',                contextWindow: '128K', pricing: '$Unknown'        },[m
+   { id: 'gpt-4o',                       provider: 'openai',    displayName: 'GPT-4o',                  contextWindow: '128K', pricing: '$5/$15 per 1M'   },[m
+   { id: 'gpt-4o-mini',                  provider: 'openai',    displayName: 'GPT-4o Mini',             contextWindow: '128K', pricing: '$0.15/$0.6 per 1M'},[m
+   { id: 'gpt-4-turbo',                  provider: 'openai',    displayName: 'GPT-4 Turbo',             contextWindow: '128K', pricing: '$10/$30 per 1M'  },[m
+[36m@@ -35,6 +36,7 @@[m [mexport const KNOWN_MODELS: Array<{[m
+   // ── MiniMax ──────────────────────────────────────────────[m
+   { id: 'MiniMax-Text-01',              provider: 'minimax',   displayName: 'MiniMax Text-01',         contextWindow: '1M',   pricing: '¥1/¥8 per 1M'   },[m
+   { id: 'abab6.5s-chat',               provider: 'minimax',   displayName: 'MiniMax ABAB6.5s',        contextWindow: '245K', pricing: '¥1/¥8 per 1M'   },[m
+[32m+[m[32m  { id: 'minimax-m2.7',                 provider: 'minimax',   displayName: 'MiniMax m2.7',            contextWindow: '245K', pricing: 'Unknown'        },[m
+   // ── OpenAI-compatible (popular open/3rd-party) ───────────[m
+   { id: 'deepseek-chat',               provider: 'openai-compatible', displayName: 'DeepSeek-V3',     contextWindow: '64K',  pricing: '$0.27/$1.1 per 1M'},[m
+   { id: 'deepseek-reasoner',           provider: 'openai-compatible', displayName: 'DeepSeek-R1',     contextWindow: '64K',  pricing: '$0.55/$2.19 per 1M'},[m
+[36m@@ -65,11 +67,19 @@[m [mexport function createProvider([m
+     case 'anthropic':[m
+       return new AnthropicProvider(apiKey)[m
+ [m
+[31m-    case 'openai':[m
+[31m-      return new OpenAIProvider(apiKey)[m
+[32m+[m[32m    case 'openai': {[m
+[32m+[m[32m      const baseUrl =[m
+[32m+[m[32m        config.providers['openai']?.baseUrl ??[m
+[32m+[m[32m        process.env.OPENAI_BASE_URL[m
+[32m+[m[32m      return new OpenAIProvider(apiKey, baseUrl ? { baseUrl } : undefined)[m
+[32m+[m[32m    }[m
+ [m
+[31m-    case 'minimax':[m
+[31m-      return new MiniMaxProvider(apiKey)[m
+[32m+[m[32m    case 'minimax': {[m
+[32m+[m[32m      const baseUrl =[m
+[32m+[m[32m        config.providers['minimax']?.baseUrl ??[m
+[32m+[m[32m        process.env.MINIMAX_BASE_URL[m
+[32m+[m[32m      return new MiniMaxProvider(apiKey, baseUrl)[m
+[32m+[m[32m    }[m
+ [m
+     case 'openai-compatible': {[m
+       const baseUrl =[m
+[1mdiff --git a/src/utils/config.ts b/src/utils/config.ts[m
+[1mindex c7db8ce..290358f 100644[m
+[1m--- a/src/utils/config.ts[m
+[1m+++ b/src/utils/config.ts[m
+[36m@@ -76,7 +76,7 @@[m [mexport async function setDefaultMode(mode: PermissionMode): Promise<void> {[m
+ export function inferProvider(model: string): ProviderId {[m
+   const m = model.toLowerCase()[m
+   if (m.startsWith('claude')) return 'anthropic'[m
+[31m-  if (m.startsWith('gpt-') || m.startsWith('o1') || m.startsWith('o3') || m.startsWith('o4')) return 'openai'[m
+[32m+[m[32m  if (m.startsWith('gpt') || m.startsWith('o1') || m.startsWith('o3') || m.startsWith('o4')) return 'openai'[m
+   // MiniMax model names: "MiniMax-Text-01", "abab6.5s-chat", "abab5.5s-chat", etc.[m
+   if (m.startsWith('minimax') || m.startsWith('abab')) return 'minimax'[m
+   return 'openai-compatible'[m

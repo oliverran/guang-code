@@ -66,7 +66,10 @@ export type ToolResult = {
 export type ToolContext = {
   cwd: string
   permissionMode: PermissionMode
-  onPermissionRequest: (toolName: string, description: string) => Promise<boolean>
+  onPermissionRequest: (toolName: string, description: string) => Promise<boolean | 'always_allow' | 'allow_once' | 'deny'>
+  model?: string
+  providerConfig?: GcConfig
+  apiKeyOverride?: string
 }
 
 // ------------------------------------------------------------------
@@ -90,6 +93,25 @@ export type ProviderConfig = {
   displayName?: string
 }
 
+// ------------------------------------------------------------------
+// Output styles
+// ------------------------------------------------------------------
+export type OutputStyle = 'default' | 'explanatory' | 'learning'
+
+// ------------------------------------------------------------------
+// Permission rules
+// ------------------------------------------------------------------
+export type PermissionEffect = 'allow' | 'deny' | 'ask'
+
+export type PermissionRule = {
+  id?: string
+  effect: PermissionEffect
+  tool?: string
+  path?: string
+  command?: string
+  description?: string
+}
+
 /** Full config file shape */
 export type GcConfig = {
   version: 1
@@ -99,6 +121,14 @@ export type GcConfig = {
   defaultMode: PermissionMode
   /** API keys and settings per provider */
   providers: Partial<Record<ProviderId, ProviderConfig>>
+  /** Always allow rules for tool permissions */
+  alwaysAllowRules?: string[]
+  /** Enable automatic sub-agent delegation for some requests */
+  autoDelegate?: boolean
+  /** Output style applied to system prompt */
+  outputStyle?: OutputStyle
+  /** Fine-grained tool permission rules */
+  permissionRules?: PermissionRule[]
 }
 
 /** Runtime provider resolution result */
@@ -187,7 +217,7 @@ export type PendingPermission = {
   id: string
   toolName: string
   description: string
-  resolve: (approved: boolean) => void
+  resolve: (result: 'allow_once' | 'always_allow' | 'deny') => void
 }
 
 // ------------------------------------------------------------------

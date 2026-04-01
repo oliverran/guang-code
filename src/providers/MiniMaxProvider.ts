@@ -151,6 +151,7 @@ export class MiniMaxProvider implements LLMProvider {
       const decoder = new TextDecoder()
       let buffer = ''
       const toolCallAccum: Record<number, { id: string; name: string; argsRaw: string }> = {}
+      let lastFinishReason = 'end_turn'
 
       while (true) {
         const { done, value } = await reader.read()
@@ -170,12 +171,15 @@ export class MiniMaxProvider implements LLMProvider {
           let chunk: MiniMaxChunk
           try { chunk = JSON.parse(data) } catch { continue }
 
+          const chunkFinishReason = chunk.choices?.[0]?.finish_reason
+          if (chunkFinishReason) lastFinishReason = chunkFinishReason
+
           const delta = chunk.choices?.[0]?.delta
           if (!delta) {
             if (chunk.usage) {
               yield {
                 type: 'done',
-                stopReason: 'end_turn',
+                stopReason: lastFinishReason,
                 inputTokens: chunk.usage.prompt_tokens,
                 outputTokens: chunk.usage.completion_tokens,
               }

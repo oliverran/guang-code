@@ -4,18 +4,31 @@
 
 import type { SlashCommand, AppState, SetState } from '../types/index.js'
 import { getTools } from '../tools/index.js'
+import { AgentTool } from '../tools/AgentTool.js'
 import { listSessions } from '../utils/sessionStorage.js'
-import { setProviderKey, setDefaultModel, setDefaultMode, loadConfig } from '../utils/config.js'
+import { setProviderKey, setDefaultModel, setDefaultMode, loadConfig, setOutputStyle, addPermissionRule, removePermissionRule, clearPermissionRules } from '../utils/config.js'
 import { KNOWN_MODELS } from '../providers/index.js'
+import { loadCustomCommands } from '../utils/customCommands.js'
+import { isGitRepo, getGitStatus, getGitDiff, getCurrentBranch } from '../utils/git.js'
+import { subagentTasks } from '../utils/subagentTasks.js'
 import { randomUUID } from 'crypto'
 
 // ── /help ─────────────────────────────────────────────────────────────────────
 const helpCommand: SlashCommand = {
   name: 'help',
   description: 'Show available commands and keyboard shortcuts',
-  async execute(_args, _state, _setState) {
+  async execute(_args, state, _setState) {
     const tools = getTools()
     const toolList = tools.map(t => `  • ${t.name.padEnd(14)} ${t.description.slice(0, 56)}`).join('\n')
+
+    const allCommands = getAllSlashCommands(state.cwd)
+    const customCommands = allCommands.filter(c => !builtInSlashCommands.some(bc => bc.name === c.name))
+    
+    let customCommandsSection = ''
+    if (customCommands.length > 0) {
+      const customList = customCommands.map(c => `  /${c.name.padEnd(18)} ${c.description.slice(0, 56)}`).join('\n')
+      customCommandsSection = `\nCUSTOM COMMANDS:\n${customList}\n`
+    }
 
     return `
 ╔══════════════════════════════════════════════════════════╗
@@ -30,10 +43,16 @@ SLASH COMMANDS:
   /providers          List all supported models & providers
   /keys <id> <key>    Set an API key (saves to ~/.guang-code/config.json)
   /mode <mode>        Switch permission mode (default/auto/plan)
+  /style [name]       Switch output style (default/explanatory/learning)
+  /permissions ...    Manage fine-grained permission rules
   /compact            Summarize and compress conversation history
   /sessions           List recent sessions
+  /tasks              List background sub-agent tasks
+  /task-cancel <id>   Cancel a running task
+  /task-retry <id>    Retry a failed task (spawns a new one)
+  /send <id> <msg>    Send a follow-up message to a running task
   /exit               Exit Guang Code
-
+${customCommandsSection}
 KEYBOARD SHORTCUTS:
   Enter               Send message
   Ctrl+C              Cancel current request
@@ -54,6 +73,75 @@ TIPS:
   • Run /keys minimax <key> to save your MiniMax key
   • Use /model gpt-4o to switch to GPT-4o mid-session
     `.trim()
+  },
+}
+
+// ── /tasks ────────────────────────────────────────────────────────────────────
+const tasksCommand: SlashCommand = {
+  name: 'tasks',
+  description: 'List background sub-agent tasks',
+  async execute(_args, _state, _setState) {
+    const tasks = subagentTasks.list().slice(0, 20)
+    if (tasks.length === 0) return 'No background tasks.'
+    const lines = tasks.map(t => {
+      const name = t.name ? ` (${t.name})` : ''
+      const age = Math.round((Date.now() - t.createdAt) / 1000)
+      return `- ${t.id.slice(0, 8)}${name}  ${t.status}  ${age}s  ${t.description}`
+    })
+    return `Tasks:\n${lines.join('\n')}`
+  },
+}
+
+// ── /task-cancel ──────────────────────────────────────────────────────────────
+const taskCancelCommand: SlashCommand = {
+  name: 'task-cancel',
+  description: 'Cancel a running background task: /task-cancel <id|name>',
+  async execute(args, _state, _setState) {
+    const id = args.trim()
+    if (!id) return 'Usage: /task-cancel <id|name>'
+    const res = subagentTasks.cancel(id)
+    if (!res.ok) return res.error ?? 'Cancel failed'
+    return `Cancelled task: ${id}`
+  },
+}
+
+// ── /task-retry ───────────────────────────────────────────────────────────────
+const taskRetryCommand: SlashCommand = {
+  name: 'task-retry',
+  description: 'Retry a task by id or name (spawns a new background task)',
+  async execute(args, state, _setState) {
+    const id = args.trim()
+    if (!id) return 'Usage: /task-retry <id|name>'
+    const task = subagentTasks.get(id)
+    if (!task) return `Task not found: ${id}`
+    if (task.status === 'running') return `Task is still running: ${task.id.slice(0, 8)}`
+
+    const input = { ...task.params, run_in_background: 'true' } as Record<string, unknown>
+    const res = await AgentTool.execute(input, {
+      cwd: state.cwd,
+      permissionMode: state.permissionMode,
+      model: state.model,
+      providerConfig: state.providerConfig,
+      onPermissionRequest: async () => 'deny',
+    })
+    return res.isError ? `Retry failed: ${res.content}` : `Retry started: ${res.content}`
+  },
+}
+
+// ── /send ─────────────────────────────────────────────────────────────────────
+const sendCommand: SlashCommand = {
+  name: 'send',
+  description: 'Send a follow-up message to a running task: /send <id|name> <message>',
+  async execute(args, _state, _setState) {
+    const trimmed = args.trim()
+    if (!trimmed) return 'Usage: /send <id|name> <message>'
+    const firstSpace = trimmed.indexOf(' ')
+    if (firstSpace < 0) return 'Usage: /send <id|name> <message>'
+    const to = trimmed.slice(0, firstSpace).trim()
+    const message = trimmed.slice(firstSpace + 1)
+    const res = subagentTasks.enqueueMessage(to, message)
+    if (!res.ok) return res.error ?? 'Send failed'
+    return `Sent to ${to}`
   },
 }
 
@@ -320,8 +408,164 @@ const exitCommand: SlashCommand = {
   },
 }
 
+// ── /commit ───────────────────────────────────────────────────────────────────
+const commitCommand: SlashCommand = {
+  name: 'commit',
+  description: 'Create a git commit with AI-generated message',
+  async execute(_args, state, _setState) {
+    if (!(await isGitRepo(state.cwd))) {
+      return "Error: Current directory is not a git repository."
+    }
+
+    const status = await getGitStatus(state.cwd)
+    if (!status) {
+      return "No changes to commit. Working tree is clean."
+    }
+
+    const diff = await getGitDiff(state.cwd)
+    const branch = await getCurrentBranch(state.cwd)
+
+    const prompt = `
+[System: Executing /commit command]
+
+Please analyze the following git changes and create a suitable commit message.
+
+## Context
+- Current branch: ${branch}
+- Status:
+${status}
+- Diff:
+${diff.slice(0, 4000)} ${diff.length > 4000 ? '\n... (diff truncated)' : ''}
+
+## Task
+1. Stage all changes using the BashTool (git add .)
+2. Create a concise, meaningful commit message (1-2 lines)
+3. Execute the commit using the BashTool (git commit -m "...")
+4. Summarize what you committed
+`
+    return prompt
+  },
+}
+
+// ── /style ────────────────────────────────────────────────────────────────────
+const styleCommand: SlashCommand = {
+  name: 'style',
+  description: 'Switch output style (default/explanatory/learning)',
+  async execute(args, state, setState) {
+    const next = args.trim().toLowerCase()
+    const cfg = await loadConfig()
+    const current = cfg.outputStyle ?? 'default'
+
+    if (!next) {
+      return [
+        `Current output style: ${current}`,
+        '',
+        'Available styles:',
+        '  • default',
+        '  • explanatory',
+        '  • learning',
+        '',
+        'Usage: /style <name>',
+      ].join('\n')
+    }
+
+    if (next !== 'default' && next !== 'explanatory' && next !== 'learning') {
+      return `Unknown style: ${next}. Use: default | explanatory | learning`
+    }
+
+    await setOutputStyle(next as any)
+    const updated = await loadConfig()
+    setState(prev => ({ ...prev, providerConfig: updated }))
+    return `Output style set to: ${next}`
+  },
+}
+
+// ── /permissions ──────────────────────────────────────────────────────────────
+const permissionsCommand: SlashCommand = {
+  name: 'permissions',
+  description: 'Manage fine-grained permission rules',
+  async execute(args, state, setState) {
+    const trimmed = args.trim()
+    const [sub, ...rest] = trimmed.split(/\s+/)
+    const cmd = (sub || 'list').toLowerCase()
+
+    const cfg = await loadConfig()
+    const rules = cfg.permissionRules ?? []
+
+    if (cmd === 'list') {
+      if (rules.length === 0) {
+        return [
+          'No permission rules configured.',
+          '',
+          'Usage:',
+          '  /permissions add <allow|deny|ask> <tool> [path=<pattern>] [command=<pattern>]',
+          '  /permissions remove <index>',
+          '  /permissions clear',
+        ].join('\n')
+      }
+
+      const lines = rules.map((r, i) => {
+        const parts = [
+          `${String(i).padStart(2)}  ${r.effect}`,
+          r.tool ? `tool=${r.tool}` : null,
+          r.path ? `path=${r.path}` : null,
+          r.command ? `command=${r.command}` : null,
+          r.description ? `desc=${r.description}` : null,
+        ].filter(Boolean)
+        return parts.join('  ')
+      })
+      return ['Permission rules:', ...lines, '', 'Usage: /permissions add|remove|clear|list'].join('\n')
+    }
+
+    if (cmd === 'clear') {
+      await clearPermissionRules()
+      const updated = await loadConfig()
+      setState(prev => ({ ...prev, providerConfig: updated }))
+      return 'Permission rules cleared.'
+    }
+
+    if (cmd === 'remove') {
+      const idxRaw = rest[0]
+      const idx = idxRaw ? Number(idxRaw) : NaN
+      if (!Number.isFinite(idx)) return 'Usage: /permissions remove <index>'
+      await removePermissionRule(idx)
+      const updated = await loadConfig()
+      setState(prev => ({ ...prev, providerConfig: updated }))
+      return `Removed rule #${idx}.`
+    }
+
+    if (cmd === 'add') {
+      const [effectRaw, toolRaw, ...kv] = rest
+      const effect = (effectRaw || '').toLowerCase()
+      const tool = toolRaw || ''
+      if (!tool || (effect !== 'allow' && effect !== 'deny' && effect !== 'ask')) {
+        return 'Usage: /permissions add <allow|deny|ask> <tool> [path=<pattern>] [command=<pattern>]'
+      }
+
+      const rule: any = { effect, tool }
+      for (const pair of kv) {
+        const eq = pair.indexOf('=')
+        if (eq < 0) continue
+        const k = pair.slice(0, eq).toLowerCase()
+        const v = pair.slice(eq + 1)
+        if (!v) continue
+        if (k === 'path') rule.path = v
+        if (k === 'command') rule.command = v
+        if (k === 'desc' || k === 'description') rule.description = v
+      }
+
+      await addPermissionRule(rule)
+      const updated = await loadConfig()
+      setState(prev => ({ ...prev, providerConfig: updated }))
+      return `Added rule: ${effect} tool=${tool}${rule.path ? ` path=${rule.path}` : ''}${rule.command ? ` command=${rule.command}` : ''}`
+    }
+
+    return 'Usage: /permissions add|remove|clear|list'
+  },
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────────
-export const slashCommands: SlashCommand[] = [
+export const builtInSlashCommands: SlashCommand[] = [
   helpCommand,
   clearCommand,
   costCommand,
@@ -329,16 +573,29 @@ export const slashCommands: SlashCommand[] = [
   providersCommand,
   keysCommand,
   modeCommand,
+  styleCommand,
+  permissionsCommand,
   compactCommand,
   sessionsCommand,
+  tasksCommand,
+  taskCancelCommand,
+  taskRetryCommand,
+  sendCommand,
+  commitCommand,
   exitCommand,
 ]
 
-export function findSlashCommand(input: string): { command: SlashCommand; args: string } | null {
+export function getAllSlashCommands(cwd: string): SlashCommand[] {
+  const customCommands = loadCustomCommands(cwd)
+  return [...builtInSlashCommands, ...customCommands]
+}
+
+export function findSlashCommand(input: string, cwd: string = process.cwd()): { command: SlashCommand; args: string } | null {
   if (!input.startsWith('/')) return null
   const [cmdPart, ...rest] = input.slice(1).split(' ')
   const args    = rest.join(' ')
-  const command = slashCommands.find(c => c.name === cmdPart?.toLowerCase())
+  const allCommands = getAllSlashCommands(cwd)
+  const command = allCommands.find(c => c.name === cmdPart?.toLowerCase())
   if (!command) return null
   return { command, args }
 }

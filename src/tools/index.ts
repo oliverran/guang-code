@@ -11,9 +11,13 @@ import { GlobTool } from './GlobTool.js'
 import { GrepTool } from './GrepTool.js'
 import { WebFetchTool } from './WebFetchTool.js'
 import { ListDirTool } from './ListDirTool.js'
+import { AgentTool } from './AgentTool.js'
+import { SendMessageTool } from './SendMessageTool.js'
 
 export function getTools(): ToolDef[] {
   return [
+    AgentTool,
+    SendMessageTool,
     BashTool,
     FileReadTool,
     FileWriteTool,

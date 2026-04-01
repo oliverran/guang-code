@@ -1,0 +1,28 @@
+{
+  "SessionStart": [
+    {
+      "type": "command",
+      "command": "powershell -NoProfile -Command \"Add-Content -Path hooks.log -Value 'SessionStart'\""
+    }
+  ],
+  "PreToolUse": [
+    {
+      "type": "command",
+      "matcher": "*",
+      "command": "powershell -NoProfile -Command \"Add-Content -Path hooks.log -Value ('PreToolUse ' + $env:GUANG_HOOK_CONTEXT)\""
+    }
+  ],
+  "PostToolUse": [
+    {
+      "type": "command",
+      "matcher": "*",
+      "command": "powershell -NoProfile -Command \"Add-Content -Path hooks.log -Value ('PostToolUse ' + $env:GUANG_HOOK_CONTEXT)\""
+    }
+  ],
+  "SessionEnd": [
+    {
+      "type": "command",
+      "command": "powershell -NoProfile -Command \"Add-Content -Path hooks.log -Value 'SessionEnd'\""
+    }
+  ]
+}

@@ -3,8 +3,9 @@
 // ============================================================
 
 import React from 'react'
-import { Box, Text } from 'ink'
+import { Box, Text, Spacer } from 'ink'
 import { useState, useEffect } from 'react'
+import figures from 'figures'
 import type { AppState } from '../types/index.js'
 
 type Props = {
@@ -18,7 +19,7 @@ const MODE_COLORS: Record<string, string> = {
 }
 
 const MODE_ICONS: Record<string, string> = {
-  default: '●',
+  default: figures.circleFilled,
   auto: '⚡',
   plan: '📋',
 }
@@ -70,8 +71,8 @@ export function StatusBar({ state }: Props) {
       {/* CWD shortened */}
       <Text color="gray">{shortenPath(cwd)}</Text>
 
-      {/* Right side: tokens + loading */}
-      <Box flexGrow={1} justifyContent="flex-end">
+      <Spacer />
+      <Box>
         {isLoading && <Text color="cyan">⟳ thinking  </Text>}
         {tokenStr && <Text color="gray" dimColor>{tokenStr}</Text>}
       </Box>

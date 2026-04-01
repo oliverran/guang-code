@@ -49,14 +49,28 @@ export MINIMAX_API_KEY=eyJ...           # MiniMax
 node dist/main.js
 ```
 
+### Windows notes
+
+- If PowerShell blocks `npm` scripts (`npm.ps1`), use `npm.cmd` (or change execution policy).
+- `npm run build` uses `bash build.sh`. On Windows, run it in **WSL** or **Git Bash**.
+- If you only need a TypeScript check on Windows:
+
+```powershell
+npx.cmd tsc -p tsconfig.json --noEmit
+```
+
 ---
 
 ## Install Globally (so you can type `guang` anywhere)
 
 ```bash
 # Inside the project directory:
-npm run build           # compile first
-npm link                # creates a global symlink
+# Recommended (build + link):
+npm run install-global
+
+# Or manually:
+# npm run build           # compile first
+# npm link                # creates a global symlink
 
 # Now you can run from any directory:
 guang
@@ -173,6 +187,7 @@ Then set `GC_BASE_URL` in your shell for the right endpoint.
 
 ```bash
 guang                              # start interactive REPL
+gc                                 # start interactive REPL (short alias)
 guang "explain this codebase"      # send initial prompt
 guang -m gpt-4o                    # use a specific model
 guang --auto                       # auto-approve all tool calls
@@ -192,9 +207,16 @@ guang --cwd /path/to/project       # set working directory
 | `/keys <provider> <key>` | Save an API key (e.g. `/keys anthropic sk-ant-...`) |
 | `/model [name]` | Show model list or switch model |
 | `/mode default\|auto\|plan` | Switch permission mode |
+| `/style [name]` | Switch output style (`default` / `explanatory` / `learning`) |
+| `/permissions ...` | Manage fine-grained permission rules |
 | `/cost` | Show token usage and estimated cost |
 | `/compact` | Compress conversation history |
 | `/sessions` | List recent saved sessions |
+| `/commit` | Create a git commit with AI-generated message |
+| `/tasks` | List background sub-agent tasks |
+| `/task-cancel <id\|name>` | Cancel a running background task |
+| `/task-retry <id\|name>` | Retry a completed/failed task |
+| `/send <id\|name> <msg>` | Send a follow-up message to a running task |
 | `/clear` | Clear conversation history |
 | `/exit` | Exit Guang Code |
 
@@ -221,10 +243,51 @@ guang --cwd /path/to/project       # set working directory
 
 ---
 
+## Fine-Grained Permissions (rules)
+
+In addition to the global modes above, Guang Code supports rule-based decisions: `allow` / `deny` / `ask`.
+
+- Global rules: `~/.guang-code/config.json` → `permissionRules`
+- Project rules: `<project>/.guang/permissions.json` (higher priority than global)
+
+Examples:
+
+```text
+/permissions add allow Read
+/permissions add deny Write path=**/.env
+/permissions add ask Bash command=*npm*
+```
+
+Project rule file format (`.guang/permissions.json`) is a JSON array:
+
+```json
+[
+  { "effect": "deny", "tool": "Write", "path": "**/.env" },
+  { "effect": "ask", "tool": "Bash", "command": "*git push*" },
+  { "effect": "allow", "tool": "Read" }
+]
+```
+
+---
+
+## Output Style
+
+Output style affects the assistant behavior by injecting an extra system prompt segment.
+
+```text
+/style                # show current + available
+/style explanatory     # adds brief implementation insights
+/style learning        # asks for user choices on meaningful decisions
+```
+
+---
+
 ## Available Tools
 
 | Tool | Description |
 |---|---|
+| `Task` | Launch a background sub-agent for focused research |
+| `SendMessage` | Send a follow-up message to a running background task |
 | `Read` | Read a file with line numbers |
 | `Write` | Create or overwrite a file |
 | `Edit` | Precise string-replacement editing |
@@ -233,6 +296,8 @@ guang --cwd /path/to/project       # set working directory
 | `Grep` | Search file contents |
 | `LS` | List directory contents |
 | `WebFetch` | Fetch a URL and return its content |
+
+MCP tools are loaded dynamically from `.guang/mcp.json` and appear as additional tools at runtime.
 
 ---
 
@@ -261,6 +326,10 @@ src/
   utils/
     QueryEngine.ts           # Core LLM loop (provider-agnostic)
     config.ts                # Config file manager (~/.guang-code/config.json)
+    claudeMd.ts              # CLAUDE.md / rules loader (hierarchy + @include)
+    projectInstructions.ts   # Instruction injection wrapper
+    permissions.ts           # Fine-grained permission rules engine
+    outputStyle.ts           # Output style prompt injection
     sessionStorage.ts        # Session persistence
   tools/
     BashTool.ts              # Shell execution + safety checks
@@ -271,6 +340,8 @@ src/
     GrepTool.ts              # Content search
     ListDirTool.ts           # Directory listing
     WebFetchTool.ts          # URL fetching
+    AgentTool.ts             # Background agent runner
+    SendMessageTool.ts       # Messaging a running agent
     index.ts                 # Tool registry
   components/
     App.tsx                  # Main REPL (React/Ink)
@@ -293,16 +364,31 @@ src/
   "version": 1,
   "defaultModel": "claude-3-5-sonnet-20241022",
   "defaultMode": "default",
+  "outputStyle": "default",
   "providers": {
     "anthropic":  { "apiKey": "sk-ant-..." },
     "openai":     { "apiKey": "sk-..." },
     "minimax":    { "apiKey": "eyJ..." },
     "openai-compatible": { "apiKey": "...", "baseUrl": "https://api.deepseek.com/v1" }
-  }
+  },
+  "permissionRules": [
+    { "effect": "deny", "tool": "Write", "path": "**/.env" }
+  ]
 }
 ```
 
 You can edit this file directly or use `/keys` and `/model` in the REPL.
+
+---
+
+## Project-Level Settings (`.guang/`)
+
+Guang Code reads optional per-project settings from a `.guang/` folder in your repo:
+
+- `.guang/mcp.json` — MCP servers configuration (stdio-based)
+- `.guang/hooks.json` — session/tool lifecycle hooks
+- `.guang/commands/*.md` — custom reusable `/xxx` commands (markdown templates)
+- `.guang/permissions.json` — fine-grained permission rules (JSON array)
 
 ---
 

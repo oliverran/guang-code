@@ -16,6 +16,9 @@ const DEFAULT_CONFIG: GcConfig = {
   defaultModel: 'claude-3-5-sonnet-20241022',
   defaultMode: 'default',
   providers: {},
+  autoDelegate: false,
+  outputStyle: 'default',
+  permissionRules: [],
 }
 
 export async function loadConfig(): Promise<GcConfig> {
@@ -59,6 +62,44 @@ export async function setDefaultMode(mode: PermissionMode): Promise<void> {
   const cfg = await loadConfig()
   cfg.defaultMode = mode
   await saveConfig(cfg)
+}
+
+export async function setOutputStyle(style: GcConfig['outputStyle']): Promise<void> {
+  const cfg = await loadConfig()
+  cfg.outputStyle = style ?? 'default'
+  await saveConfig(cfg)
+}
+
+export async function addPermissionRule(rule: NonNullable<GcConfig['permissionRules']>[number]): Promise<void> {
+  const cfg = await loadConfig()
+  if (!cfg.permissionRules) cfg.permissionRules = []
+  cfg.permissionRules.push(rule)
+  await saveConfig(cfg)
+}
+
+export async function removePermissionRule(index: number): Promise<void> {
+  const cfg = await loadConfig()
+  if (!cfg.permissionRules || cfg.permissionRules.length === 0) return
+  if (index < 0 || index >= cfg.permissionRules.length) return
+  cfg.permissionRules.splice(index, 1)
+  await saveConfig(cfg)
+}
+
+export async function clearPermissionRules(): Promise<void> {
+  const cfg = await loadConfig()
+  cfg.permissionRules = []
+  await saveConfig(cfg)
+}
+
+export async function addAlwaysAllowRule(rule: string): Promise<void> {
+  const cfg = await loadConfig()
+  if (!cfg.alwaysAllowRules) {
+    cfg.alwaysAllowRules = []
+  }
+  if (!cfg.alwaysAllowRules.includes(rule)) {
+    cfg.alwaysAllowRules.push(rule)
+    await saveConfig(cfg)
+  }
 }
 
 // ── Provider detection ────────────────────────────────────────────
