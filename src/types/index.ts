@@ -129,6 +129,10 @@ export type GcConfig = {
   outputStyle?: OutputStyle
   /** Fine-grained tool permission rules */
   permissionRules?: PermissionRule[]
+  /** Enable/disable auto memory injection */
+  memoryEnabled?: boolean
+  /** Override memory base directory for memdir (advanced) */
+  memoryDirectory?: string
 }
 
 /** Runtime provider resolution result */

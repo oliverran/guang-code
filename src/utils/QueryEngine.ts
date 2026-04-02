@@ -26,6 +26,7 @@ import { loadConfig, addAlwaysAllowRule } from './config.js'
 import { runSubagentSession } from './subagentRun.js'
 import { getOutputStylePrompt } from './outputStyle.js'
 import { decidePermission, loadProjectPermissionRules } from './permissions.js'
+import { loadMemoryForPrompt } from './memdir.js'
 
 // ── System Prompt ──────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are Guang Code, a powerful AI coding assistant running in the terminal. You help users with software engineering tasks including:
@@ -63,6 +64,8 @@ const SYSTEM_PROMPT = `You are Guang Code, a powerful AI coding assistant runnin
 Current working directory: {{CWD}}
 
 {{PROJECT_INSTRUCTIONS}}
+
+{{MEMORY}}
 `
 
 export type QueryOptions = {
@@ -178,10 +181,16 @@ export async function runQuery(options: QueryOptions): Promise<{
     instructionsText = `\n## Project Instructions\nThe following instructions have been provided by the user for this specific project. You must strictly adhere to these rules:\n\n<project_instructions>\n${projectInstructions}\n</project_instructions>\n`
   }
 
+  const memory = loadMemoryForPrompt(cwd, { enabled: config.memoryEnabled, baseDir: config.memoryDirectory })
+  const memoryText = memory
+    ? `\n<memory>\n${memory.text}\n</memory>\n`
+    : ''
+
   const systemPrompt = SYSTEM_PROMPT
     .replace('{{CWD}}', cwd)
     .replace('{{PROJECT_INSTRUCTIONS}}', instructionsText)
     .replace('{{OUTPUT_STYLE}}', outputStyle.prompt)
+    .replace('{{MEMORY}}', memoryText)
 
   // Initialize Hooks
   await hooksManager.loadHooks(cwd)
@@ -246,11 +255,12 @@ export async function runQuery(options: QueryOptions): Promise<{
     let hasToolCalls = false
 
     try {
+      const toolsForProvider = filterProviderToolsByAllowedTools(chatHistory, providerTools)
       for await (const chunk of provider.streamChat({
         model,
         system: systemPrompt,
         messages: chatHistory,
-        tools: providerTools,
+        tools: toolsForProvider,
         signal,
       })) {
         if (signal?.aborted) break
@@ -397,6 +407,22 @@ export async function runQuery(options: QueryOptions): Promise<{
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
+
+function filterProviderToolsByAllowedTools(history: ChatMessage[], tools: ProviderTool[]): ProviderTool[] {
+  const lastUser = findLastUserText(history)
+  if (!lastUser) return tools
+
+  const m = lastUser.match(/^\s*Allowed tools:\s*(.+)\s*$/im)
+  if (!m) return tools
+  const raw = (m[1] ?? '').trim()
+  if (!raw) return tools
+  if (raw === '*' || raw.toLowerCase() === 'all') return tools
+
+  const allow = new Set(raw.split(',').map(s => s.trim()).filter(Boolean).map(s => s.toLowerCase()))
+  if (allow.size === 0) return tools
+
+  return tools.filter(t => allow.has(t.name.toLowerCase()))
+}
 
 function sessionMessagesToChatMessages(messages: SessionMessage[]): ChatMessage[] {
   const result: ChatMessage[] = []

@@ -19,6 +19,7 @@ const DEFAULT_CONFIG: GcConfig = {
   autoDelegate: false,
   outputStyle: 'default',
   permissionRules: [],
+  memoryEnabled: true,
 }
 
 export async function loadConfig(): Promise<GcConfig> {
@@ -67,6 +68,18 @@ export async function setDefaultMode(mode: PermissionMode): Promise<void> {
 export async function setOutputStyle(style: GcConfig['outputStyle']): Promise<void> {
   const cfg = await loadConfig()
   cfg.outputStyle = style ?? 'default'
+  await saveConfig(cfg)
+}
+
+export async function setMemoryEnabled(enabled: boolean): Promise<void> {
+  const cfg = await loadConfig()
+  cfg.memoryEnabled = enabled
+  await saveConfig(cfg)
+}
+
+export async function setMemoryDirectory(dir: string | null): Promise<void> {
+  const cfg = await loadConfig()
+  cfg.memoryDirectory = dir && dir.trim() ? dir.trim() : undefined
   await saveConfig(cfg)
 }
 

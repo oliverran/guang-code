@@ -6,12 +6,17 @@ import type { SlashCommand, AppState, SetState } from '../types/index.js'
 import { getTools } from '../tools/index.js'
 import { AgentTool } from '../tools/AgentTool.js'
 import { listSessions } from '../utils/sessionStorage.js'
-import { setProviderKey, setDefaultModel, setDefaultMode, loadConfig, setOutputStyle, addPermissionRule, removePermissionRule, clearPermissionRules } from '../utils/config.js'
+import { setProviderKey, setDefaultModel, setDefaultMode, loadConfig, setOutputStyle, setMemoryDirectory, setMemoryEnabled, addPermissionRule, removePermissionRule, clearPermissionRules } from '../utils/config.js'
 import { KNOWN_MODELS } from '../providers/index.js'
 import { loadCustomCommands } from '../utils/customCommands.js'
 import { isGitRepo, getGitStatus, getGitDiff, getCurrentBranch } from '../utils/git.js'
 import { subagentTasks } from '../utils/subagentTasks.js'
 import { randomUUID } from 'crypto'
+import { loadAllSkills, renderSkillInvocation } from '../utils/skills.js'
+import { homedir } from 'os'
+import { addMemory, ensureMemoryIndexExists, getProjectMemoryDir, listMemoryEntries, readMemoryFile, removeMemory } from '../utils/memdir.js'
+import { addProjectCronTask, clearProjectCronTasks, listProjectCronTasks, removeProjectCronTask, setProjectCronTaskEnabled } from '../utils/cronTasks.js'
+import { parseCronExpression } from '../utils/cron.js'
 
 // ── /help ─────────────────────────────────────────────────────────────────────
 const helpCommand: SlashCommand = {
@@ -45,6 +50,10 @@ SLASH COMMANDS:
   /mode <mode>        Switch permission mode (default/auto/plan)
   /style [name]       Switch output style (default/explanatory/learning)
   /permissions ...    Manage fine-grained permission rules
+  /skills             List available skills
+  /skill <id> [args]  Execute a skill (prompt template)
+  /memory ...         Manage persistent project memory
+  /cron ...           Manage scheduled tasks (project)
   /compact            Summarize and compress conversation history
   /sessions           List recent sessions
   /tasks              List background sub-agent tasks
@@ -564,6 +573,226 @@ const permissionsCommand: SlashCommand = {
   },
 }
 
+const skillsCommand: SlashCommand = {
+  name: 'skills',
+  description: 'List available skills from ~/.guang-code/skills and .guang/skills',
+  async execute(_args, state, _setState) {
+    const skills = loadAllSkills(state.cwd)
+    if (skills.length === 0) {
+      return [
+        'No skills found.',
+        '',
+        'Directories:',
+        `  - ${state.cwd}\\.guang\\skills\\<skill>\\SKILL.md`,
+        `  - ${homedir()}\\.guang-code\\skills\\<skill>\\SKILL.md`,
+      ].join('\n')
+    }
+
+    const lines = skills.map(s => `- ${s.id}  ${s.description}`)
+    return ['Skills:', ...lines, '', 'Run: /skill <id> [args]'].join('\n')
+  },
+}
+
+const skillCommand: SlashCommand = {
+  name: 'skill',
+  description: 'Execute a skill: /skill <id> [args]',
+  async execute(args, state, _setState) {
+    const trimmed = args.trim()
+    if (!trimmed) return 'Usage: /skill <id> [args]'
+    const [id, ...rest] = trimmed.split(' ')
+    const skillArgs = rest.join(' ')
+    const skills = loadAllSkills(state.cwd)
+    const skill = skills.find(s => s.id === id)
+    if (!skill) return `Skill not found: ${id}`
+    return renderSkillInvocation(skill, skillArgs)
+  },
+}
+
+const memoryCommand: SlashCommand = {
+  name: 'memory',
+  description: 'Manage persistent project memory',
+  async execute(args, state, setState) {
+    const trimmed = args.trim()
+    const [sub, ...rest] = trimmed.split(/\s+/)
+    const cmd = (sub || 'list').toLowerCase()
+    const cfg = await loadConfig()
+    const baseDir = cfg.memoryDirectory
+
+    if (cmd === 'enable' || cmd === 'disable') {
+      await setMemoryEnabled(cmd === 'enable')
+      const updated = await loadConfig()
+      setState(prev => ({ ...prev, providerConfig: updated }))
+      return `Memory ${cmd === 'enable' ? 'enabled' : 'disabled'}.`
+    }
+
+    if (cmd === 'dir') {
+      const next = rest.join(' ').trim()
+      if (!next) {
+        const cur = (cfg.memoryDirectory && cfg.memoryDirectory.trim()) ? cfg.memoryDirectory.trim() : '(default)'
+        return `Memory base directory: ${cur}`
+      }
+      await setMemoryDirectory(next)
+      const updated = await loadConfig()
+      setState(prev => ({ ...prev, providerConfig: updated }))
+      return `Memory base directory set to: ${next}`
+    }
+
+    if (cmd === 'path') {
+      return `Project memory dir:\n${getProjectMemoryDir(state.cwd, { baseDir })}`
+    }
+
+    if (cmd === 'init') {
+      const created = ensureMemoryIndexExists(state.cwd, { baseDir })
+      return `Memory initialized:\n${created.entrypoint}`
+    }
+
+    if (cmd === 'list') {
+      const entries = listMemoryEntries(state.cwd, { baseDir })
+      if (entries.length === 0) {
+        return [
+          'No memory entries found.',
+          '',
+          'Usage:',
+          '  /memory add [user|project|reference|feedback] :: <markdown>',
+          '  /memory show <id>',
+          '  /memory remove <id>',
+          '  /memory path',
+          '  /memory init',
+          '  /memory enable|disable',
+          '  /memory dir [path]',
+        ].join('\n')
+      }
+      const lines = entries.slice(0, 50).map(e => `- ${e.id}  ${e.name}${e.description ? ` — ${e.description}` : ''}`)
+      return ['Memory entries:', ...lines, '', 'Usage: /memory add [type] :: <markdown>'].join('\n')
+    }
+
+    if (cmd === 'add') {
+      const restText = rest.join(' ').trim()
+      const sep = restText.indexOf('::')
+      if (sep < 0) return 'Usage: /memory add [user|project|reference|feedback] :: <markdown>'
+      const header = restText.slice(0, sep).trim()
+      const body = restText.slice(sep + 2).trim()
+      if (!body) return 'Usage: /memory add :: <markdown>'
+      const type = (header === 'user' || header === 'project' || header === 'reference' || header === 'feedback')
+        ? (header as any)
+        : 'project'
+      const entry = addMemory(state.cwd, { type, body, baseDir })
+      return `Memory saved: ${entry.id}`
+    }
+
+    if (cmd === 'show') {
+      const id = rest[0]
+      if (!id) return 'Usage: /memory show <id>'
+      const content = readMemoryFile(state.cwd, id, { baseDir })
+      if (!content) return `Memory not found: ${id}`
+      return content
+    }
+
+    if (cmd === 'remove') {
+      const id = rest[0]
+      if (!id) return 'Usage: /memory remove <id>'
+      const res = removeMemory(state.cwd, id, { baseDir })
+      if (!res.ok) return res.error ?? 'Remove failed'
+      return `Removed memory: ${id}`
+    }
+
+    return 'Usage: /memory list|add|show|remove|path|init|enable|disable|dir'
+  },
+}
+
+const cronCommand: SlashCommand = {
+  name: 'cron',
+  description: 'Manage scheduled tasks in .guang/scheduled_tasks.json',
+  async execute(args, state, _setState) {
+    const trimmed = args.trim()
+    const [sub, ...rest] = trimmed.split(/\s+/)
+    const cmd = (sub || 'list').toLowerCase()
+
+    if (cmd === 'list') {
+      const tasks = listProjectCronTasks(state.cwd)
+      if (tasks.length === 0) {
+        return [
+          'No scheduled tasks configured.',
+          '',
+          'Usage:',
+          '  /cron add <cron expr> :: <prompt>',
+          '  /cron add-once <cron expr> :: <prompt>',
+          '  /cron enable <id>',
+          '  /cron disable <id>',
+          '  /cron run <id>',
+          '  /cron remove <id>',
+          '  /cron clear',
+          '',
+          'Cron expr: "min hour dom month dow" (supports *, ranges, lists, */step)',
+          'Example: */5 * * * *',
+        ].join('\n')
+      }
+
+      const lines = tasks.map(t => {
+        const flags = [
+          t.enabled === false ? 'disabled' : null,
+          t.recurring === false ? 'once' : 'recurring',
+        ].filter(Boolean).join(', ')
+        return `- ${t.id}  ${t.cron}  (${flags})\n  ${t.prompt.replace(/\n+/g, ' ').slice(0, 160)}`
+      })
+      return ['Scheduled tasks:', ...lines].join('\n')
+    }
+
+    if (cmd === 'clear') {
+      clearProjectCronTasks(state.cwd)
+      return 'Scheduled tasks cleared.'
+    }
+
+    if (cmd === 'remove') {
+      const id = rest[0]
+      if (!id) return 'Usage: /cron remove <id>'
+      const res = removeProjectCronTask(state.cwd, id)
+      if (!res.ok) return res.error ?? 'Remove failed'
+      return `Removed task: ${id}`
+    }
+
+    if (cmd === 'enable' || cmd === 'disable') {
+      const id = rest[0]
+      if (!id) return `Usage: /cron ${cmd} <id>`
+      const res = setProjectCronTaskEnabled(state.cwd, id, cmd === 'enable')
+      if (!res.ok) return res.error ?? 'Update failed'
+      return `${cmd === 'enable' ? 'Enabled' : 'Disabled'} task: ${id}`
+    }
+
+    if (cmd === 'run') {
+      const id = rest[0]
+      if (!id) return 'Usage: /cron run <id>'
+      const tasks = listProjectCronTasks(state.cwd)
+      const task = tasks.find(t => t.id === id)
+      if (!task) return `Task not found: ${id}`
+      return `[Scheduled Task: ${id}]\n${task.prompt}`
+    }
+
+    if (cmd === 'add' || cmd === 'add-once') {
+      const raw = rest.join(' ').trim()
+      const sep = raw.indexOf('::')
+      if (sep < 0) return 'Usage: /cron add <cron expr> :: <prompt>'
+      const cronExpr = raw.slice(0, sep).trim()
+      const prompt = raw.slice(sep + 2).trim()
+      if (!cronExpr || !prompt) return 'Usage: /cron add <cron expr> :: <prompt>'
+
+      if (!parseCronExpression(cronExpr)) {
+        return `Invalid cron expression: ${cronExpr}`
+      }
+
+      const task = addProjectCronTask(state.cwd, {
+        cron: cronExpr,
+        prompt,
+        recurring: cmd !== 'add-once',
+        enabled: true,
+      })
+      return `Scheduled task created: ${task.id}`
+    }
+
+    return 'Usage: /cron list|add|add-once|remove|enable|disable|run|clear'
+  },
+}
+
 // ── Registry ──────────────────────────────────────────────────────────────────
 export const builtInSlashCommands: SlashCommand[] = [
   helpCommand,
@@ -575,6 +804,10 @@ export const builtInSlashCommands: SlashCommand[] = [
   modeCommand,
   styleCommand,
   permissionsCommand,
+  skillsCommand,
+  skillCommand,
+  memoryCommand,
+  cronCommand,
   compactCommand,
   sessionsCommand,
   tasksCommand,

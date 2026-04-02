@@ -17,6 +17,8 @@ import { findSlashCommand } from '../commands/slashCommands.js'
 import { saveSession } from '../utils/sessionStorage.js'
 import { randomUUID } from 'crypto'
 import { onSubagentEvent } from '../utils/subagents.js'
+import type { CronTaskRun } from '../utils/cronTasks.js'
+import { claimDueProjectCronRuns, finalizeProjectCronRun } from '../utils/cronTasks.js'
 
 type Props = {
   initialState: AppState
@@ -33,6 +35,151 @@ export function App({ initialState, apiKeyOverride }: Props) {
   const [spinnerText, setSpinnerText] = useState('')
   const abortRef = useRef<AbortController | null>(null)
   const bgSeenRef = useRef<Set<string>>(new Set())
+  const stateRef = useRef<AppState>(state)
+  const cronQueueRef = useRef<CronTaskRun[]>([])
+  const cronProcessingRef = useRef(false)
+
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
+
+  const runAutomatedPrompt = useCallback(async (promptText: string, label: string): Promise<boolean> => {
+    const cur = stateRef.current
+    if (cur.isLoading || cur.pendingPermission) return false
+    let hadError = false
+
+    const userMsg: SessionMessage = {
+      id: randomUUID(),
+      role: 'user',
+      content: `[Scheduled Task: ${label}]\n${promptText}`,
+      timestamp: Date.now(),
+    }
+
+    setState(prev => ({ ...prev, messages: [...prev.messages, userMsg], isLoading: true, error: null }))
+    setStreamingText('')
+    setSpinnerText('thinking...')
+
+    const abort = new AbortController()
+    abortRef.current = abort
+
+    try {
+      const { messages: newMsgs, inputTokens, outputTokens } = await runQuery({
+        messages: [...cur.messages, userMsg],
+        model: cur.model,
+        cwd: cur.cwd,
+        permissionMode: cur.permissionMode,
+        providerConfig: cur.providerConfig,
+        apiKeyOverride,
+        signal: abort.signal,
+        onPermissionRequest: async (toolName, description) => {
+          const latest = stateRef.current
+          if (latest.permissionMode === 'auto') return 'always_allow'
+          return new Promise<'allow_once' | 'always_allow' | 'deny'>((resolve) => {
+            const pending: PendingPermission = {
+              id: randomUUID(), toolName, description,
+              resolve: (approved) => {
+                setState(prev => ({ ...prev, pendingPermission: null }))
+                resolve(approved)
+              },
+            }
+            setState(prev => ({ ...prev, pendingPermission: pending }))
+          })
+        },
+        onStreamChunk: (chunk) => {
+          if (chunk.type === 'text_delta') {
+            setStreamingText(prev => prev + (chunk.text ?? ''))
+          } else if (chunk.type === 'tool_start') {
+            const name = chunk.toolName ?? ''
+            setSpinnerText(name && name !== '…' ? `${name}…` : 'thinking...')
+            setStreamingText('')
+          } else if (chunk.type === 'tool_done') {
+            setSpinnerText('thinking...')
+          } else if (chunk.type === 'error') {
+            hadError = true
+            setState(prev => ({ ...prev, error: chunk.error ?? 'Unknown error', isLoading: false }))
+            setSpinnerText('')
+            setStreamingText('')
+          }
+        },
+      })
+
+      setState(prev => {
+        const combined = [...prev.messages, ...newMsgs]
+        const updated: AppState = {
+          ...prev,
+          messages: combined,
+          isLoading: false,
+          inputTokens: prev.inputTokens + inputTokens,
+          outputTokens: prev.outputTokens + outputTokens,
+          pendingPermission: null,
+          spinnerText: '',
+        }
+        saveSession({
+          id: prev.sessionId,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          cwd: prev.cwd,
+          model: prev.model,
+          messages: combined,
+          inputTokens: updated.inputTokens,
+          outputTokens: updated.outputTokens,
+        }).catch(() => {})
+        return updated
+      })
+      return !hadError
+    } catch (err: unknown) {
+      const e = err as Error
+      if (e.name !== 'AbortError') {
+        setState(prev => ({ ...prev, isLoading: false, error: e.message, pendingPermission: null }))
+      } else {
+        setState(prev => ({ ...prev, isLoading: false, pendingPermission: null }))
+      }
+      return false
+    }
+
+    setStreamingText('')
+    setSpinnerText('')
+  }, [apiKeyOverride])
+
+  const processCronQueue = useCallback(async () => {
+    if (cronProcessingRef.current) return
+    cronProcessingRef.current = true
+    try {
+      while (true) {
+        const cur = stateRef.current
+        if (cur.isLoading || cur.pendingPermission) return
+        const next = cronQueueRef.current.shift()
+        if (!next) return
+        const label = `${next.task.id}@${new Date(next.bucket).toISOString().slice(0, 16)}`
+        const ok = await runAutomatedPrompt(next.task.prompt, label)
+        finalizeProjectCronRun(cur.cwd, { task: next.task, bucket: next.bucket }, ok)
+      }
+    } finally {
+      cronProcessingRef.current = false
+    }
+  }, [runAutomatedPrompt])
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const cur = stateRef.current
+      if (cur.isLoading || cur.pendingPermission) return
+      const claimed = claimDueProjectCronRuns(cur.cwd, new Date())
+      if (claimed.runs.length > 0) {
+        const maxQueue = 20
+        const existing = new Set(cronQueueRef.current.map(r => `${r.task.id}:${r.bucket}`))
+        for (const r of claimed.runs) {
+          const key = `${r.task.id}:${r.bucket}`
+          if (existing.has(key)) continue
+          cronQueueRef.current.push(r)
+          existing.add(key)
+          if (cronQueueRef.current.length >= maxQueue) break
+        }
+      }
+      await processCronQueue()
+    }, 5_000)
+
+    return () => clearInterval(interval)
+  }, [processCronQueue])
 
   useEffect(() => {
     const off = onSubagentEvent(e => {
