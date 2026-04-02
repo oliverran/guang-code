@@ -2,11 +2,14 @@
 //  Guang Code — GrepTool
 // ============================================================
 
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
+import { readFile, stat } from 'fs/promises'
+import { glob } from 'glob'
 import { promisify } from 'util'
 import type { ToolDef, ToolContext, ToolResult } from '../types/index.js'
+import { assertSafeLocalPath, validateGlobPattern } from '../utils/pathSafety.js'
 
-const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 export const GrepTool: ToolDef = {
   name: 'Grep',
@@ -41,37 +44,24 @@ export const GrepTool: ToolDef = {
     const searchPath = (input.path as string | undefined) ?? '.'
     const contextLines = (input.context_lines as number | undefined) ?? 2
 
-    // Try ripgrep first, fall back to grep
-    const hasRg = await checkRipgrep()
-
-    let command: string
-    if (hasRg) {
-      const includeFlag = include ? `--glob "${include}"` : ''
-      command = `rg --line-number --context ${contextLines} --color never ${includeFlag} "${pattern.replace(/"/g, '\\"')}" "${searchPath}"`
-    } else {
-      const includeFlag = include ? `--include="${include}"` : ''
-      command = `grep -rn --context=${contextLines} ${includeFlag} "${pattern.replace(/"/g, '\\"')}" "${searchPath}" 2>/dev/null || true`
-    }
-
     try {
-      const { stdout } = await execAsync(command, {
-        cwd: ctx.cwd,
-        maxBuffer: 1024 * 512, // 512KB
-        timeout: 15000,
-      })
-
-      const trimmed = stdout.trim()
-      if (!trimmed) {
-        return { content: `No matches found for pattern: ${pattern}` }
+      const dir = assertSafeLocalPath({ cwd: ctx.cwd, inputPath: searchPath })
+      if (include) {
+        const v = validateGlobPattern(include)
+        if (!v.ok) return { content: `Grep error: ${v.reason ?? 'Invalid include glob.'}`, isError: true }
       }
 
-      // Limit output
-      const lines = trimmed.split('\n')
-      const MAX = 200
-      const shown = lines.slice(0, MAX)
-      const suffix = lines.length > MAX ? `\n... (${lines.length - MAX} more lines truncated)` : ''
+      const hasRg = await checkRipgrep()
+      if (hasRg) {
+        const args = ['--line-number', '--context', String(contextLines), '--color', 'never']
+        if (include) args.push('--glob', include)
+        args.push(pattern, dir)
+        const { stdout } = await execFileAsync('rg', args, { cwd: ctx.cwd, maxBuffer: 1024 * 512, timeout: 15000 })
+        return formatGrepOutput(pattern, stdout)
+      }
 
-      return { content: shown.join('\n') + suffix }
+      const out = await grepInJs({ dir, include, pattern, contextLines })
+      return formatGrepOutput(pattern, out)
     } catch (err: unknown) {
       const e = err as Error
       return { content: `Grep error: ${e.message}`, isError: true }
@@ -83,10 +73,55 @@ let _hasRg: boolean | null = null
 async function checkRipgrep(): Promise<boolean> {
   if (_hasRg !== null) return _hasRg
   try {
-    await execAsync('rg --version', { timeout: 2000 })
+    await execFileAsync('rg', ['--version'], { timeout: 2000 })
     _hasRg = true
   } catch {
     _hasRg = false
   }
   return _hasRg
+}
+
+function formatGrepOutput(pattern: string, stdout: string): ToolResult {
+  const trimmed = (stdout ?? '').trim()
+  if (!trimmed) return { content: `No matches found for pattern: ${pattern}` }
+  const lines = trimmed.split('\n')
+  const MAX = 200
+  const shown = lines.slice(0, MAX)
+  const suffix = lines.length > MAX ? `\n... (${lines.length - MAX} more lines truncated)` : ''
+  return { content: shown.join('\n') + suffix }
+}
+
+async function grepInJs(opts: { dir: string; include?: string; pattern: string; contextLines: number }): Promise<string> {
+  const re = new RegExp(opts.pattern, 'g')
+  const ignore = ['node_modules/**', 'dist/**', '.git/**']
+  const globPattern = opts.include ? opts.include : '**/*'
+  const files = await glob(globPattern, { cwd: opts.dir, absolute: true, nodir: true, dot: false, ignore })
+  const MAX_FILES = 4000
+  const targetFiles = files.slice(0, MAX_FILES)
+  const linesOut: string[] = []
+  const MAX_TOTAL_LINES = 2000
+  for (const fp of targetFiles) {
+    if (linesOut.length >= MAX_TOTAL_LINES) break
+    try {
+      const st = await stat(fp)
+      if (st.size > 1024 * 1024) continue
+      const raw = await readFile(fp, 'utf8')
+      const lines = raw.split('\n')
+      for (let idx = 0; idx < lines.length; idx++) {
+        if (linesOut.length >= MAX_TOTAL_LINES) break
+        const line = lines[idx] ?? ''
+        re.lastIndex = 0
+        if (!re.test(line)) continue
+        const from = Math.max(0, idx - opts.contextLines)
+        const to = Math.min(lines.length - 1, idx + opts.contextLines)
+        for (let j = from; j <= to; j++) {
+          const prefix = j === idx ? '>' : ' '
+          linesOut.push(`${fp}:${j + 1}:${prefix}${lines[j] ?? ''}`)
+        }
+        linesOut.push('')
+      }
+    } catch {
+    }
+  }
+  return linesOut.join('\n')
 }

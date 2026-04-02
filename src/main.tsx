@@ -12,7 +12,7 @@ import figures from 'figures'
 import { App } from './components/App.js'
 import type { AppState } from './types/index.js'
 import { loadSession } from './utils/sessionStorage.js'
-import { loadConfig, CONFIG_PATH } from './utils/config.js'
+import { loadConfig, CONFIG_PATH, migratePlaintextKeysIfNeeded } from './utils/config.js'
 
 // ── CLI setup ────────────────────────────────────────────────
 const program = new Command()
@@ -35,7 +35,8 @@ const opts = program.opts()
 const [initialPrompt] = program.args
 
 // ── Load config ───────────────────────────────────────────────
-const config = await loadConfig()
+let config = await loadConfig()
+config = await migratePlaintextKeysIfNeeded(config)
 
 // ── Resolve model ─────────────────────────────────────────────
 const model = (opts.model as string | undefined) ?? config.defaultModel

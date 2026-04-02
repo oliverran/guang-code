@@ -3,8 +3,8 @@
 // ============================================================
 
 import { glob } from 'glob'
-import { resolve } from 'path'
 import type { ToolDef, ToolContext, ToolResult } from '../types/index.js'
+import { validateGlobPattern } from '../utils/pathSafety.js'
 
 export const GlobTool: ToolDef = {
   name: 'Glob',
@@ -28,6 +28,9 @@ export const GlobTool: ToolDef = {
   async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
     const pattern = input.pattern as string
     const ignoreRaw = input.ignore as string | undefined
+
+    const v = validateGlobPattern(pattern)
+    if (!v.ok) return { content: `Glob error: ${v.reason ?? 'Invalid pattern.'}`, isError: true }
 
     const ignorePatterns = ignoreRaw
       ? ignoreRaw.split(',').map(p => p.trim()).filter(Boolean)

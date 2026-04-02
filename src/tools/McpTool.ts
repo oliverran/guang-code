@@ -21,15 +21,6 @@ export async function createMcpTools(client: Client, serverName: string): Promis
         description: `[MCP: ${serverName}] ${mcpTool.description || `Execute ${mcpTool.name}`}`,
         inputSchema: mcpTool.inputSchema as any,
         async execute(input: Record<string, unknown>, context: ToolContext) {
-          const approved = await context.onPermissionRequest(
-            toolName,
-            `Execute MCP tool ${mcpTool.name} from server ${serverName} with arguments:\n${JSON.stringify(input, null, 2)}`
-          )
-
-          if (!approved) {
-            return { content: 'Permission denied by user', isError: true }
-          }
-
           try {
             const result = await client.callTool({
               name: mcpTool.name,

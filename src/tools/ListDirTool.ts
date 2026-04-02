@@ -3,7 +3,8 @@
 // ============================================================
 
 import { readdir, stat } from 'fs/promises'
-import { resolve, join } from 'path'
+import { join } from 'path'
+import { assertSafeLocalPath, resolveRealPathWithinCwd } from '../utils/pathSafety.js'
 import type { ToolDef, ToolContext, ToolResult } from '../types/index.js'
 
 export const ListDirTool: ToolDef = {
@@ -28,10 +29,12 @@ export const ListDirTool: ToolDef = {
   },
 
   async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-    const targetPath = resolve(ctx.cwd, (input.path as string | undefined) ?? '.')
+    let targetPath = ''
     const showHidden = (input.show_hidden as string | undefined) === 'true'
 
     try {
+      targetPath = assertSafeLocalPath({ cwd: ctx.cwd, inputPath: String((input.path as string | undefined) ?? '.') })
+      await resolveRealPathWithinCwd({ cwd: ctx.cwd, absPath: targetPath })
       const entries = await readdir(targetPath, { withFileTypes: true })
       const filtered = showHidden ? entries : entries.filter(e => !e.name.startsWith('.'))
 

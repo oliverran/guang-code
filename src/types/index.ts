@@ -86,7 +86,9 @@ export type ProviderId = 'anthropic' | 'openai' | 'minimax' | 'openai-compatible
 
 /** Per-provider config stored in ~/.guang-code/config.json */
 export type ProviderConfig = {
-  apiKey: string
+  apiKey?: string
+  apiKeyEnc?: string
+  apiKeyStore?: 'plaintext' | 'windows-dpapi'
   /** For openai-compatible: custom base URL */
   baseUrl?: string
   /** Display name override */
@@ -108,6 +110,7 @@ export type PermissionRule = {
   effect: PermissionEffect
   tool?: string
   path?: string
+  domain?: string
   command?: string
   description?: string
 }

@@ -259,7 +259,7 @@ const providersCommand: SlashCommand = {
         minimax: process.env.MINIMAX_API_KEY,
         'openai-compatible': process.env.GC_API_KEY ?? process.env.OPENAI_API_KEY,
       }[pid]
-      const cfgKey = cfg.providers[pid]?.apiKey
+      const cfgKey = cfg.providers[pid]?.apiKey ?? cfg.providers[pid]?.apiKeyEnc
       const hasKey = !!(envKey || cfgKey)
       return `  ${hasKey ? '✓' : '✗'} ${pid.padEnd(20)} ${hasKey ? '(key configured)' : '(no key — run /keys ' + pid + ' <KEY>)'}`
     })
@@ -354,7 +354,7 @@ const modeCommand: SlashCommand = {
       return `Invalid mode. Choose: default, auto, or plan
 
   default  Ask before bash commands and file writes
-  auto     Execute all tools without asking
+  auto     Execute safe tools without asking (denies unsafe tools)
   plan     Read-only until plan is approved`
     }
 

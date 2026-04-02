@@ -3,6 +3,7 @@
 // ============================================================
 
 import type { ToolDef, ToolContext, ToolResult } from '../types/index.js'
+import { isLoopbackHost, isPrivateOrLinkLocalIp, resolveHostIps, validateUrlString } from '../utils/webFetchSafety.js'
 
 export const WebFetchTool: ToolDef = {
   name: 'WebFetch',
@@ -27,20 +28,23 @@ export const WebFetchTool: ToolDef = {
     const url = input.url as string
     const maxLen = (input.max_length as number | undefined) ?? 20000
 
-    // Permission check
-    const approved = await ctx.onPermissionRequest(
-      'WebFetch',
-      `Fetch URL: ${url}`,
-    )
-    if (!approved) {
-      return { content: 'Web fetch was denied by user.', isError: true }
-    }
-
     try {
+      const v = validateUrlString(url)
+      const allowLocal = process.env.GC_ALLOW_LOCALHOST_WEBFETCH === '1'
+      if (!allowLocal && isLoopbackHost(v.hostname)) {
+        return { content: 'Blocked URL hostname (loopback) for safety.', isError: true }
+      }
+      const ips = await resolveHostIps(v.hostname)
+      if (!allowLocal) {
+        if (ips.some(ip => isPrivateOrLinkLocalIp(ip))) {
+          return { content: 'Blocked URL hostname (private/link-local) for safety.', isError: true }
+        }
+      }
+
       const controller = new AbortController()
       const timeout = setTimeout(() => controller.abort(), 15000)
 
-      const response = await fetch(url, {
+      const response = await fetch(v.normalized, {
         signal: controller.signal,
         headers: {
           'User-Agent': 'Guang-Code/1.0',
@@ -80,7 +84,7 @@ export const WebFetchTool: ToolDef = {
         content = content.slice(0, maxLen) + `\n\n... (truncated, ${content.length - maxLen} more chars)`
       }
 
-      return { content: `URL: ${url}\nContent-Type: ${contentType}\n\n${content}` }
+      return { content: `URL: ${v.normalized}\nContent-Type: ${contentType}\n\n${content}` }
     } catch (err: unknown) {
       const e = err as Error
       if (e.name === 'AbortError') {

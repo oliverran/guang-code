@@ -7,6 +7,7 @@ import { readFile, writeFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 import type { GcConfig, PermissionMode, ProviderId, ProviderConfig } from '../types/index.js'
+import { decryptFromStore, encryptForStore, preferredSecretStore } from './secureStore.js'
 
 export const GC_DIR = join(homedir(), '.guang-code')
 export const CONFIG_PATH = join(GC_DIR, 'config.json')
@@ -49,7 +50,20 @@ export async function setProviderKey(
   extra?: Partial<ProviderConfig>,
 ): Promise<void> {
   const cfg = await loadConfig()
-  cfg.providers[providerId] = { ...cfg.providers[providerId], apiKey, ...extra }
+  const store = preferredSecretStore()
+  const enc = encryptForStore(apiKey, store)
+  const prev = cfg.providers[providerId] ?? {}
+  const next: ProviderConfig = { ...prev, ...extra }
+  if (enc.kind === 'windows-dpapi') {
+    delete (next as any).apiKey
+    next.apiKeyEnc = enc.value
+    next.apiKeyStore = enc.kind
+  } else {
+    next.apiKey = apiKey
+    delete (next as any).apiKeyEnc
+    delete (next as any).apiKeyStore
+  }
+  cfg.providers[providerId] = next
   await saveConfig(cfg)
 }
 
@@ -159,5 +173,37 @@ export function resolveApiKey(
   if (envMap[providerId]) return envMap[providerId]
 
   // 3. config file
-  return config.providers[providerId]?.apiKey ?? ''
+  const pcfg = config.providers[providerId]
+  if (!pcfg) return ''
+  if (pcfg.apiKey) return pcfg.apiKey
+  if (pcfg.apiKeyEnc) {
+    const kind = (pcfg.apiKeyStore ?? 'windows-dpapi') as any
+    try {
+      return decryptFromStore(pcfg.apiKeyEnc, kind)
+    } catch {
+      return ''
+    }
+  }
+  return ''
+}
+
+export async function migratePlaintextKeysIfNeeded(config: GcConfig): Promise<GcConfig> {
+  if (preferredSecretStore() !== 'windows-dpapi') return config
+  let changed = false
+  const next: GcConfig = { ...config, providers: { ...config.providers } }
+  for (const pid of Object.keys(next.providers) as ProviderId[]) {
+    const pcfg = next.providers[pid]
+    if (!pcfg) continue
+    if (pcfg.apiKey && !pcfg.apiKeyEnc) {
+      const enc = encryptForStore(pcfg.apiKey, 'windows-dpapi')
+      const updated: ProviderConfig = { ...pcfg, apiKeyEnc: enc.value, apiKeyStore: enc.kind }
+      delete (updated as any).apiKey
+      next.providers[pid] = updated
+      changed = true
+    }
+  }
+  if (changed) {
+    await saveConfig(next)
+  }
+  return next
 }

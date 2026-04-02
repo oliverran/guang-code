@@ -2,29 +2,8 @@
 //  Guang Code — BashTool
 // ============================================================
 
-import { exec } from 'child_process'
-import { promisify } from 'util'
+import { spawn } from 'child_process'
 import type { ToolDef, ToolContext, ToolResult } from '../types/index.js'
-
-const execAsync = promisify(exec)
-
-// Commands that require explicit user confirmation even in auto mode
-const DANGEROUS_PATTERNS = [
-  /rm\s+-rf?\s+[/~]/,
-  /rm\s+-rf\s/,
-  /\bdd\b/,
-  /\bmkfs\b/,
-  /\bfdisk\b/,
-  /\bformat\b/,
-  />\s*\/dev\//,
-  /:\(\)\{.*\}/,        // fork bomb
-  /curl.*\|\s*(ba)?sh/, // curl pipe to shell
-  /wget.*\|\s*(ba)?sh/,
-]
-
-function isDangerous(command: string): boolean {
-  return DANGEROUS_PATTERNS.some(p => p.test(command))
-}
 
 export const BashTool: ToolDef = {
   name: 'Bash',
@@ -52,18 +31,6 @@ export const BashTool: ToolDef = {
   async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
     const command = input.command as string
     const timeout = (input.timeout as number | undefined) ?? 30000
-    const description = (input.description as string | undefined) ?? command
-
-    // Permission check
-    if (ctx.permissionMode !== 'auto' || isDangerous(command)) {
-      const approved = await ctx.onPermissionRequest(
-        'Bash',
-        `Run command: ${description}\n\`${command}\``,
-      )
-      if (!approved) {
-        return { content: 'Command execution was denied by user.', isError: true }
-      }
-    }
 
     // plan mode: deny write-like commands
     if (ctx.permissionMode === 'plan') {
@@ -77,21 +44,86 @@ export const BashTool: ToolDef = {
     }
 
     try {
-      const { stdout, stderr } = await execAsync(command, {
-        cwd: ctx.cwd,
-        timeout,
-        maxBuffer: 1024 * 1024 * 4, // 4MB
-        env: { ...process.env },
-      })
-      const out = [stdout, stderr].filter(Boolean).join('\n').trim()
-      return { content: out || '(command completed with no output)' }
-    } catch (err: unknown) {
-      const e = err as NodeJS.ErrnoException & { stdout?: string; stderr?: string; killed?: boolean }
-      if (e.killed) {
-        return { content: `Command timed out after ${timeout}ms`, isError: true }
+      const parsed = parseCommand(command)
+      if (!parsed) {
+        return { content: 'Unsupported command syntax. Use a simple executable + args (no pipes/redirection).', isError: true }
       }
-      const output = [e.stdout, e.stderr, e.message].filter(Boolean).join('\n')
-      return { content: output || 'Command failed', isError: true }
+      const { file, args } = parsed
+      const res = await runSpawn({ file, args, cwd: ctx.cwd, timeoutMs: timeout })
+      return { content: res || '(command completed with no output)' }
+    } catch (err: unknown) {
+      const e = err as Error
+      return { content: e.message || 'Command failed', isError: true }
     }
   },
+}
+
+function parseCommand(command: string): { file: string; args: string[] } | null {
+  const s = (command ?? '').toString().trim()
+  if (!s) return null
+  if (/[|&;<>`]/.test(s)) return null
+  const tokens: string[] = []
+  let cur = ''
+  let quote: '"' | "'" | null = null
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i] ?? ''
+    if (quote) {
+      if (ch === quote) {
+        quote = null
+      } else {
+        cur += ch
+      }
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch as any
+      continue
+    }
+    if (/\s/.test(ch)) {
+      if (cur) tokens.push(cur), cur = ''
+      continue
+    }
+    cur += ch
+  }
+  if (quote) return null
+  if (cur) tokens.push(cur)
+  if (tokens.length === 0) return null
+  const [file, ...args] = tokens
+  return file ? { file, args } : null
+}
+
+function runSpawn(opts: { file: string; args: string[]; cwd: string; timeoutMs: number }): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(opts.file, opts.args, {
+      cwd: opts.cwd,
+      env: { ...process.env },
+      shell: false,
+      windowsHide: true,
+    })
+    const chunks: string[] = []
+    let totalChars = 0
+    const MAX_CHARS = 1024 * 1024 * 4
+    const onData = (b: Buffer) => {
+      if (totalChars >= MAX_CHARS) return
+      const s = b.toString('utf8')
+      totalChars += s.length
+      chunks.push(s)
+    }
+    child.stdout.on('data', onData)
+    child.stderr.on('data', onData)
+    const t = setTimeout(() => {
+      child.kill()
+      reject(new Error(`Command timed out after ${opts.timeoutMs}ms`))
+    }, opts.timeoutMs)
+    child.on('error', (e) => {
+      clearTimeout(t)
+      reject(e)
+    })
+    child.on('close', (code) => {
+      clearTimeout(t)
+      const out = chunks.join('').trim()
+      if (code === 0) return resolve(out)
+      reject(new Error(out || `Command failed with exit code ${code ?? 'unknown'}`))
+    })
+  })
 }

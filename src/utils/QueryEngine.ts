@@ -27,6 +27,9 @@ import { runSubagentSession } from './subagentRun.js'
 import { getOutputStylePrompt } from './outputStyle.js'
 import { decidePermission, loadProjectPermissionRules } from './permissions.js'
 import { loadMemoryForPrompt } from './memdir.js'
+import { redactIfSecrets } from './secretScanner.js'
+import { parseTokenBudget } from './tokenBudget.js'
+import { createBudgetTracker, checkTokenBudget } from './tokenBudgetTracker.js'
 
 // ── System Prompt ──────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are Guang Code, a powerful AI coding assistant running in the terminal. You help users with software engineering tasks including:
@@ -199,6 +202,10 @@ export async function runQuery(options: QueryOptions): Promise<{
   // Build conversation history in provider-agnostic format
   let chatHistory: ChatMessage[] = sessionMessagesToChatMessages(messages)
 
+  const lastUserText = findLastUserText(chatHistory) ?? ''
+  const budget = parseTokenBudget(lastUserText)
+  const budgetTracker = createBudgetTracker()
+
   const autoDelegateEnabled = Boolean(config.autoDelegate) || process.env.GC_AUTO_DELEGATE === '1'
   if (autoDelegateEnabled) {
     const injected = await autoDelegateIfNeeded({
@@ -345,8 +352,28 @@ export async function runQuery(options: QueryOptions): Promise<{
       }
     }
 
-    // No tool calls → done
-    if (toolCallList.length === 0) break
+    // No tool calls → check budget or done
+    if (toolCallList.length === 0) {
+      const decision = checkTokenBudget(
+        budgetTracker,
+        undefined, // agentId not currently used in this context
+        budget,
+        totalOutput
+      )
+
+      if (decision.action === 'continue') {
+        chatHistory.push({ role: 'user', content: decision.nudgeMessage })
+        newMessages.push({
+          id: randomUUID(),
+          role: 'user',
+          content: decision.nudgeMessage,
+          timestamp: Date.now(),
+        })
+        onStreamChunk({ type: 'tool_start', toolName: '…' })
+        continue
+      }
+      break
+    }
 
     // ── Execute tool calls ─────────────────────────────────────
     const toolResults: Array<{ type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }> = []
@@ -361,31 +388,43 @@ export async function runQuery(options: QueryOptions): Promise<{
 
       try {
         activeTool = { name: tc.name, input: tc.input }
+
+        const desc = buildPermissionDescription({ toolName: tc.name, input: tc.input, cwd })
+        const allowed = await toolContext.onPermissionRequest(tc.name, desc)
+        if (allowed !== true) {
+          toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `Permission denied for tool "${tc.name}".`, is_error: true })
+          activeTool = null
+          continue
+        }
+
         await hooksManager.triggerEvent('PreToolUse', cwd, { tool_name: tc.name, tool_input: tc.input })
         const result = await toolDef.execute(tc.input, toolContext)
         await hooksManager.triggerEvent('PostToolUse', cwd, { tool_name: tc.name, tool_input: tc.input, result: result.content })
         activeTool = null
         
+        const redacted = redactIfSecrets(result.content)
+        const safeResultContent = redacted.redacted
+
         onStreamChunk({
           type: 'tool_done',
           toolName: tc.name,
-          toolResult: result.isError ? `Error: ${result.content}` : result.content,
+          toolResult: result.isError ? `Error: ${safeResultContent}` : safeResultContent,
         })
         toolResults.push({
           type: 'tool_result',
           tool_use_id: tc.id,
-          content: result.content,
+          content: safeResultContent,
           is_error: result.isError,
         })
 
         newMessages.push({
           id: randomUUID(), role: 'assistant',
-          content: `[Tool: ${tc.name}]\nInput: ${JSON.stringify(tc.input, null, 2)}`,
+          content: `[Tool: ${tc.name}]\nInput: ${JSON.stringify(sanitizeToolInputForHistory(tc.name, tc.input), null, 2)}`,
           timestamp: Date.now(), toolUseId: tc.id,
         })
         newMessages.push({
           id: randomUUID(), role: 'user',
-          content: `[Tool Result: ${tc.name}]\n${result.content}`,
+          content: `[Tool Result: ${tc.name}]\n${safeResultContent}`,
           timestamp: Date.now(), toolUseId: tc.id,
         })
       } catch (err: unknown) {
@@ -443,6 +482,87 @@ function sessionMessagesToChatMessages(messages: SessionMessage[]): ChatMessage[
   }
 
   return result
+}
+
+function buildPermissionDescription(opts: { toolName: string; input: Record<string, unknown>; cwd: string }): string {
+  const n = opts.toolName
+  const i = opts.input ?? {}
+  if (n === 'Read') {
+    const fp = String(i.file_path ?? '')
+    const a = i.start_line !== undefined ? Number(i.start_line) : 1
+    const b = i.end_line !== undefined ? Number(i.end_line) : undefined
+    const range = b ? `Lines ${a}-${b}` : `From line ${a}`
+    return `Read file: ${fp}\n${range}\nCWD: ${opts.cwd}`
+  }
+  if (n === 'Write') {
+    const fp = String(i.file_path ?? '')
+    const c = String(i.content ?? '')
+    const lines = c ? c.split('\n').length : 0
+    return `Write file: ${fp}\nContent: ${lines} line(s)\nCWD: ${opts.cwd}`
+  }
+  if (n === 'Edit') {
+    const fp = String(i.file_path ?? '')
+    const oldS = String(i.old_string ?? '')
+    const newS = String(i.new_string ?? '')
+    return `Edit file: ${fp}\nReplace: ${oldS.split('\n').length} lines -> ${newS.split('\n').length} lines\nCWD: ${opts.cwd}`
+  }
+  if (n === 'LS') {
+    const p = String(i.path ?? '.')
+    return `List directory: ${p}\nCWD: ${opts.cwd}`
+  }
+  if (n === 'Grep') {
+    const patt = String(i.pattern ?? '')
+    const inc = i.include ? `\nInclude: ${String(i.include)}` : ''
+    const p = i.path ? `\nPath: ${String(i.path)}` : ''
+    return `Search pattern: ${patt}${inc}${p}\nCWD: ${opts.cwd}`
+  }
+  if (n === 'Glob') {
+    const patt = String(i.pattern ?? '')
+    const ign = i.ignore ? `\nIgnore: ${String(i.ignore)}` : ''
+    return `Glob pattern: ${patt}${ign}\nCWD: ${opts.cwd}`
+  }
+  if (n === 'Bash') {
+    const cmd = String(i.command ?? '')
+    const red = redactIfSecrets(cmd)
+    const shown = red.redacted.length > 240 ? red.redacted.slice(0, 240) + '…' : red.redacted
+    return `Run command:\n${shown}\nCWD: ${opts.cwd}`
+  }
+  if (n === 'WebFetch') {
+    const url = String(i.url ?? '')
+    const red = redactIfSecrets(url)
+    return `Fetch URL: ${red.redacted}\nCWD: ${opts.cwd}`
+  }
+  if (n === 'Task') {
+    const q = String(i.query ?? '')
+    const red = redactIfSecrets(q)
+    return `Run sub-agent task:\n${red.redacted}\nCWD: ${opts.cwd}`
+  }
+  return `${n}\nCWD: ${opts.cwd}`
+}
+
+function sanitizeToolInputForHistory(toolName: string, input: Record<string, unknown>): Record<string, unknown> {
+  const i = { ...(input ?? {}) }
+  if (toolName === 'Write') {
+    const c = String(i.content ?? '')
+    i.content = `[omitted: ${c.length} chars]`
+  }
+  if (toolName === 'Edit') {
+    const oldS = String(i.old_string ?? '')
+    const newS = String(i.new_string ?? '')
+    i.old_string = `[omitted: ${oldS.length} chars]`
+    i.new_string = `[omitted: ${newS.length} chars]`
+  }
+  if (toolName === 'Bash') {
+    const cmd = String(i.command ?? '')
+    const red = redactIfSecrets(cmd)
+    i.command = red.redacted
+  }
+  if (toolName === 'WebFetch') {
+    const url = String(i.url ?? '')
+    const red = redactIfSecrets(url)
+    i.url = red.redacted
+  }
+  return i
 }
 
 function estimateChatHistorySize(history: ChatMessage[]): number {

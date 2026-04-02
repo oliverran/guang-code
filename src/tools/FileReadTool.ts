@@ -3,7 +3,7 @@
 // ============================================================
 
 import { readFile, stat } from 'fs/promises'
-import { resolve } from 'path'
+import { assertSafeLocalPath, isLikelyTextFileExt, resolveRealPathWithinCwd } from '../utils/pathSafety.js'
 import type { ToolDef, ToolContext, ToolResult } from '../types/index.js'
 
 const MAX_FILE_SIZE = 1024 * 1024 // 1 MB
@@ -32,11 +32,16 @@ export const FileReadTool: ToolDef = {
   },
 
   async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-    const filePath = resolve(ctx.cwd, input.file_path as string)
+    let filePath = ''
     const startLine = (input.start_line as number | undefined) ?? 1
     const endLine = input.end_line as number | undefined
 
     try {
+      filePath = assertSafeLocalPath({ cwd: ctx.cwd, inputPath: String(input.file_path ?? '') })
+      if (!isLikelyTextFileExt(filePath)) {
+        return { content: `Binary or unsupported file type: ${filePath}`, isError: true }
+      }
+      await resolveRealPathWithinCwd({ cwd: ctx.cwd, absPath: filePath })
       const stats = await stat(filePath)
       if (stats.size > MAX_FILE_SIZE) {
         return {

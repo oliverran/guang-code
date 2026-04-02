@@ -28,63 +28,116 @@ export class AnthropicProvider implements LLMProvider {
   }): AsyncIterable<StreamChunk> {
     const { model, system, messages, tools, signal } = opts
 
+    // Filter and prepare cache breakpoints
+    const filteredMessages = messages.filter(m => m.role !== 'system')
+    const userMessageIndices = filteredMessages
+      .map((m, i) => (m.role === 'user' ? i : -1))
+      .filter(i => i !== -1)
+
+    // Select the last two user messages as cache breakpoints
+    const lastUserIdx = userMessageIndices[userMessageIndices.length - 1]
+    const secondLastUserIdx = userMessageIndices[userMessageIndices.length - 2]
+
     // Convert to Anthropic message format
-    const apiMessages: Anthropic.MessageParam[] = messages
-      .filter(m => m.role !== 'system')
-      .map(m => {
-        if (m.role === 'user') {
-          if (typeof m.content === 'string') {
-            return { role: 'user' as const, content: m.content }
-          }
-          // Tool results
-          const toolResults = (m.content as Array<{ type: string; tool_use_id: string; content: string; is_error?: boolean }>)
+    const apiMessages: Anthropic.MessageParam[] = filteredMessages.map((m, index) => {
+      const isCachePoint = index === lastUserIdx || index === secondLastUserIdx
+      const cacheControl: Anthropic.CacheControlEphemeral | null = isCachePoint
+        ? { type: 'ephemeral' }
+        : null
+
+      if (m.role === 'user') {
+        if (typeof m.content === 'string') {
           return {
             role: 'user' as const,
-            content: toolResults.map(r => ({
-              type: 'tool_result' as const,
-              tool_use_id: r.tool_use_id,
-              content: r.content,
-              is_error: r.is_error,
-            })),
+            content: [
+              {
+                type: 'text',
+                text: m.content,
+                ...(cacheControl ? { cache_control: cacheControl } : {}),
+              },
+            ],
           }
         }
-        // assistant
-        if (typeof m.content === 'string') {
-          return { role: 'assistant' as const, content: m.content }
-        }
-        const parts = m.content as Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>
+        // Tool results
+        const toolResults = m.content as Array<{
+          type: string
+          tool_use_id: string
+          content: string
+          is_error?: boolean
+        }>
         return {
-          role: 'assistant' as const,
-          content: parts.map(p => {
-            if (p.type === 'text') {
-              return { type: 'text' as const, text: p.text ?? '' }
-            }
-            return {
-              type: 'tool_use' as const,
-              id: p.id ?? '',
-              name: p.name ?? '',
-              input: p.input ?? {},
-            }
-          }),
+          role: 'user' as const,
+          content: toolResults.map((r, rIdx) => ({
+            type: 'tool_result' as const,
+            tool_use_id: r.tool_use_id,
+            content: r.content,
+            is_error: r.is_error,
+            // Add cache control to the last block of this message
+            ...(cacheControl && rIdx === toolResults.length - 1
+              ? { cache_control: cacheControl }
+              : {}),
+          })),
         }
-      })
+      }
 
-    const anthropicTools: Anthropic.Tool[] = tools.map(t => ({
+      // assistant
+      if (typeof m.content === 'string') {
+        return { role: 'assistant' as const, content: m.content }
+      }
+      const parts = m.content as Array<{
+        type: string
+        text?: string
+        id?: string
+        name?: string
+        input?: Record<string, unknown>
+      }>
+      return {
+        role: 'assistant' as const,
+        content: parts.map(p => {
+          if (p.type === 'text') {
+            return { type: 'text' as const, text: p.text ?? '' }
+          }
+          return {
+            type: 'tool_use' as const,
+            id: p.id ?? '',
+            name: p.name ?? '',
+            input: p.input ?? {},
+          }
+        }),
+      }
+    })
+
+    const anthropicTools: Anthropic.Tool[] = tools.map((t, index) => ({
       name: t.name,
       description: t.description,
       input_schema: t.inputSchema as Anthropic.Tool['input_schema'],
+      // Add cache control to the last tool definition
+      ...(index === tools.length - 1 ? { cache_control: { type: 'ephemeral' } } : {}),
     }))
 
     const stream = await this.client.messages.create(
       {
         model,
         max_tokens: 8096,
-        system,
+        system: system
+          ? [
+              {
+                type: 'text',
+                text: system,
+                cache_control: { type: 'ephemeral' },
+              },
+            ]
+          : undefined,
         messages: apiMessages,
-        tools: anthropicTools,
+        tools: anthropicTools.length > 0 ? anthropicTools : undefined,
         stream: true,
       },
-      { signal },
+      {
+        signal,
+        headers: {
+          'anthropic-beta': 'prompt-caching-2024-07-31',
+        },
+      },
     )
 
     let currentToolId = ''
@@ -130,9 +183,17 @@ export class AnthropicProvider implements LLMProvider {
       } else if (event.type === 'message_start') {
         // Input tokens arrive here; we yield a special done-like signal later
         // Store input tokens in a done event from message_start
-        const inp = event.message.usage?.input_tokens ?? 0
-        if (inp > 0) {
-          yield { type: 'done', stopReason: '_input_tokens', inputTokens: inp, outputTokens: 0 }
+        const usage = event.message.usage
+        const inp = usage?.input_tokens ?? 0
+        const cacheRead = (usage as any)?.cache_read_input_tokens ?? 0
+        
+        if (inp > 0 || cacheRead > 0) {
+          yield { 
+            type: 'done', 
+            stopReason: '_input_tokens', 
+            inputTokens: inp + cacheRead, 
+            outputTokens: 0 
+          }
         }
       }
     }

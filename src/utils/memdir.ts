@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { homedir } from 'os'
 import { createHash, randomUUID } from 'crypto'
+import { findSecrets, hasSecrets } from './secretScanner.js'
 
 export type MemoryEntryType = 'user' | 'project' | 'reference' | 'feedback'
 
@@ -298,6 +299,11 @@ export function loadMemoryForPrompt(cwd: string, opts?: MemoryOptions): { text: 
     return { text: blocks.join('\n\n').trim(), sources, memoryDir: dir }
   }
 
+  if (hasSecrets(rawIndex)) {
+    blocks.push('[Memory index]\n[SKIPPED: potential secrets detected]\n[/Memory index]')
+    return { text: blocks.join('\n\n').trim(), sources, memoryDir: dir }
+  }
+
   sources.push(entrypoint)
   const trunc = truncateEntrypointContent(rawIndex)
   const indexText = trunc.content
@@ -309,6 +315,10 @@ export function loadMemoryForPrompt(cwd: string, opts?: MemoryOptions): { text: 
     const fp = path.join(dir, rel)
     const body = safeRead(fp)
     if (!body) continue
+    if (hasSecrets(body)) {
+      blocks.push(`[Memory file: ${rel}]\n[SKIPPED: potential secrets detected]\n[/Memory file: ${rel}]`)
+      continue
+    }
     sources.push(fp)
     blocks.push(`[Memory file: ${rel}]\n${truncateText(body, MAX_LINKED_FILE_CHARS)}\n[/Memory file: ${rel}]`)
   }
@@ -355,6 +365,11 @@ export function addMemory(cwd: string, opts: { type: MemoryEntryType; name?: str
   const filePath = path.join(dir, id)
 
   const content = renderEntryFrontmatter({ name, description, type }) + bodyTrimmed + '\n'
+  const findings = findSecrets(content, 5)
+  if (findings.length > 0) {
+    const kinds = Array.from(new Set(findings.map(f => f.kind))).join(', ')
+    throw new Error(`Potential secrets detected in memory content (${kinds}). Refusing to save.`)
+  }
   writeTextAtomic(filePath, content)
 
   const entrypoint = path.join(dir, ENTRYPOINT_NAME)

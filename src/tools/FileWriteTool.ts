@@ -3,7 +3,8 @@
 // ============================================================
 
 import { writeFile, mkdir } from 'fs/promises'
-import { resolve, dirname } from 'path'
+import { dirname } from 'path'
+import { assertSafeLocalPath, resolveRealPathWithinCwd } from '../utils/pathSafety.js'
 import type { ToolDef, ToolContext, ToolResult } from '../types/index.js'
 
 export const FileWriteTool: ToolDef = {
@@ -26,17 +27,8 @@ export const FileWriteTool: ToolDef = {
   },
 
   async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-    const filePath = resolve(ctx.cwd, input.file_path as string)
+    let filePath = ''
     const content = input.content as string
-
-    // Always require permission for file writes
-    const approved = await ctx.onPermissionRequest(
-      'Write',
-      `Create/overwrite file: ${filePath}\n(${content.split('\n').length} lines)`,
-    )
-    if (!approved) {
-      return { content: 'File write was denied by user.', isError: true }
-    }
 
     if (ctx.permissionMode === 'plan') {
       return {
@@ -46,6 +38,8 @@ export const FileWriteTool: ToolDef = {
     }
 
     try {
+      filePath = assertSafeLocalPath({ cwd: ctx.cwd, inputPath: String(input.file_path ?? '') })
+      await resolveRealPathWithinCwd({ cwd: ctx.cwd, absPath: filePath })
       await mkdir(dirname(filePath), { recursive: true })
       await writeFile(filePath, content, 'utf-8')
       const lines = content.split('\n').length

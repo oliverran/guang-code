@@ -4,7 +4,7 @@
 // ============================================================
 
 import { readFile, writeFile } from 'fs/promises'
-import { resolve } from 'path'
+import { assertSafeLocalPath, resolveRealPathWithinCwd } from '../utils/pathSafety.js'
 import type { ToolDef, ToolContext, ToolResult } from '../types/index.js'
 
 export const FileEditTool: ToolDef = {
@@ -30,18 +30,9 @@ export const FileEditTool: ToolDef = {
   },
 
   async execute(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
-    const filePath = resolve(ctx.cwd, input.file_path as string)
+    let filePath = ''
     const oldString = input.old_string as string
     const newString = input.new_string as string
-
-    // Permission check
-    const approved = await ctx.onPermissionRequest(
-      'Edit',
-      `Edit file: ${filePath}\n- Replace ${oldString.split('\n').length}-line block`,
-    )
-    if (!approved) {
-      return { content: 'File edit was denied by user.', isError: true }
-    }
 
     if (ctx.permissionMode === 'plan') {
       return {
@@ -51,6 +42,8 @@ export const FileEditTool: ToolDef = {
     }
 
     try {
+      filePath = assertSafeLocalPath({ cwd: ctx.cwd, inputPath: String(input.file_path ?? '') })
+      await resolveRealPathWithinCwd({ cwd: ctx.cwd, absPath: filePath })
       const raw = await readFile(filePath, 'utf-8')
 
       const occurrences = raw.split(oldString).length - 1
