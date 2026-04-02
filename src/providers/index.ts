@@ -20,17 +20,27 @@ export const KNOWN_MODELS: Array<{
   pricing: string
 }> = [
   // ── Anthropic ────────────────────────────────────────────
-  { id: 'claude-opus-4-5',              provider: 'anthropic', displayName: 'Claude Opus 4.5',         contextWindow: '200K', pricing: '$15/$75 per 1M' },
-  { id: 'claude-sonnet-4-5',            provider: 'anthropic', displayName: 'Claude Sonnet 4.5',       contextWindow: '200K', pricing: '$3/$15 per 1M'  },
-  { id: 'claude-haiku-4-5',             provider: 'anthropic', displayName: 'Claude Haiku 4.5',        contextWindow: '200K', pricing: '$0.8/$4 per 1M'  },
-  { id: 'claude-3-5-sonnet-20241022',   provider: 'anthropic', displayName: 'Claude 3.5 Sonnet',       contextWindow: '200K', pricing: '$3/$15 per 1M'   },
-  { id: 'claude-3-5-haiku-20241022',    provider: 'anthropic', displayName: 'Claude 3.5 Haiku',        contextWindow: '200K', pricing: '$0.8/$4 per 1M'  },
-  { id: 'claude-3-opus-20240229',       provider: 'anthropic', displayName: 'Claude 3 Opus',           contextWindow: '200K', pricing: '$15/$75 per 1M'  },
+  { id: 'claude-opus-4-6',              provider: 'anthropic', displayName: 'Claude Opus 4.6',         contextWindow: '200K', pricing: '$15/$75 per 1M' },
+  { id: 'claude-opus-4-5-20251101',     provider: 'anthropic', displayName: 'Claude Opus 4.5',         contextWindow: '200K', pricing: '$15/$75 per 1M' },
+  { id: 'claude-opus-4-1-20250805',     provider: 'anthropic', displayName: 'Claude Opus 4.1',         contextWindow: '200K', pricing: '$15/$75 per 1M' },
+  { id: 'claude-opus-4-20250514',       provider: 'anthropic', displayName: 'Claude Opus 4',           contextWindow: '200K', pricing: '$15/$75 per 1M' },
+  { id: 'claude-sonnet-4-6',            provider: 'anthropic', displayName: 'Claude Sonnet 4.6',       contextWindow: '200K', pricing: '$3/$15 per 1M'  },
+  { id: 'claude-sonnet-4-5-20250929',   provider: 'anthropic', displayName: 'Claude Sonnet 4.5',       contextWindow: '200K', pricing: '$3/$15 per 1M'  },
+  { id: 'claude-sonnet-4-20250514',     provider: 'anthropic', displayName: 'Claude Sonnet 4',         contextWindow: '200K', pricing: '$3/$15 per 1M'  },
+  { id: 'claude-haiku-4-5-20251001',    provider: 'anthropic', displayName: 'Claude Haiku 4.5',        contextWindow: '200K', pricing: '$0.8/$4 per 1M' },
+  { id: 'claude-3-7-sonnet-20250219',   provider: 'anthropic', displayName: 'Claude 3.7 Sonnet',       contextWindow: '200K', pricing: '$3/$15 per 1M'  },
+  { id: 'claude-3-5-sonnet-20241022',   provider: 'anthropic', displayName: 'Claude 3.5 Sonnet',       contextWindow: '200K', pricing: '$3/$15 per 1M'  },
+  { id: 'claude-3-5-haiku-20241022',    provider: 'anthropic', displayName: 'Claude 3.5 Haiku',        contextWindow: '200K', pricing: '$0.8/$4 per 1M' },
+  { id: 'claude-3-opus-20240229',       provider: 'anthropic', displayName: 'Claude 3 Opus',           contextWindow: '200K', pricing: '$15/$75 per 1M' },
   // ── OpenAI ───────────────────────────────────────────────
   { id: 'gpt-5.3',                      provider: 'openai',    displayName: 'GPT-5.3',                contextWindow: '128K', pricing: '$Unknown'        },
+  { id: 'gpt-4.1',                      provider: 'openai',    displayName: 'GPT-4.1',                contextWindow: '128K', pricing: '$Unknown'        },
+  { id: 'gpt-4.1-mini',                 provider: 'openai',    displayName: 'GPT-4.1 Mini',           contextWindow: '128K', pricing: '$Unknown'        },
   { id: 'gpt-4o',                       provider: 'openai',    displayName: 'GPT-4o',                  contextWindow: '128K', pricing: '$5/$15 per 1M'   },
   { id: 'gpt-4o-mini',                  provider: 'openai',    displayName: 'GPT-4o Mini',             contextWindow: '128K', pricing: '$0.15/$0.6 per 1M'},
   { id: 'gpt-4-turbo',                  provider: 'openai',    displayName: 'GPT-4 Turbo',             contextWindow: '128K', pricing: '$10/$30 per 1M'  },
+  { id: 'o1',                           provider: 'openai',    displayName: 'o1 (reasoning)',           contextWindow: '200K', pricing: '$Unknown'        },
+  { id: 'o1-mini',                      provider: 'openai',    displayName: 'o1-mini (reasoning)',      contextWindow: '200K', pricing: '$Unknown'        },
   { id: 'o3',                           provider: 'openai',    displayName: 'o3 (reasoning)',           contextWindow: '200K', pricing: '$10/$40 per 1M'  },
   { id: 'o4-mini',                      provider: 'openai',    displayName: 'o4-mini (reasoning)',      contextWindow: '200K', pricing: '$1.1/$4.4 per 1M'},
   // ── MiniMax ──────────────────────────────────────────────
@@ -40,6 +50,9 @@ export const KNOWN_MODELS: Array<{
   // ── OpenAI-compatible (popular open/3rd-party) ───────────
   { id: 'deepseek-chat',               provider: 'openai-compatible', displayName: 'DeepSeek-V3',     contextWindow: '64K',  pricing: '$0.27/$1.1 per 1M'},
   { id: 'deepseek-reasoner',           provider: 'openai-compatible', displayName: 'DeepSeek-R1',     contextWindow: '64K',  pricing: '$0.55/$2.19 per 1M'},
+  { id: 'qwen-plus',                   provider: 'openai-compatible', displayName: 'Qwen Plus',       contextWindow: '128K', pricing: 'Unknown'        },
+  { id: 'qwen-max',                    provider: 'openai-compatible', displayName: 'Qwen Max',        contextWindow: '128K', pricing: 'Unknown'        },
+  { id: 'glm-4',                       provider: 'openai-compatible', displayName: 'GLM-4',           contextWindow: '128K', pricing: 'Unknown'        },
 ]
 
 /**

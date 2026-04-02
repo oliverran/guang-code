@@ -286,10 +286,13 @@ const providersCommand: SlashCommand = {
       ...keyStatus,
       '\nSUPPORTED MODELS:',
       ...modelLines,
-      '\nTo add more providers (e.g. DeepSeek):',
+      '\nTo add more providers (OpenAI-compatible gateways, e.g. DeepSeek/Qwen/GLM):',
       '  /keys openai-compatible <YOUR_KEY>',
-      '  then set GC_BASE_URL=https://api.deepseek.com/v1 in your shell',
-      '  and /model deepseek-chat',
+      '  then set GC_BASE_URL in your shell, e.g.:',
+      '    DeepSeek: https://api.deepseek.com/v1',
+      '    Qwen:     https://dashscope.aliyuncs.com/compatible-mode/v1',
+      '    GLM:      https://open.bigmodel.cn/api/paas/v4',
+      '  and /model <model-id> (e.g. deepseek-chat / qwen-plus / glm-4)',
     ].join('\n')
   },
 }

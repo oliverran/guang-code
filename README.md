@@ -25,6 +25,24 @@
 
 ---
 
+## Changelog
+
+### v1.1.0 (2026-04-02)
+
+- Security & permissions: unified tool permission gate; `--auto` is now safe-by-default (denies unsafe tools unless rules allow)
+- Filesystem: blocks workspace escape + UNC paths; safer path matching for permission rules
+- Web: WebFetch URL validation + SSRF guards (blocks loopback/private/link-local by default)
+- Secrets: memory injection secret scanning; tool input/history redaction for sensitive fields
+- Keys (Windows): `/keys` stores provider keys via DPAPI encryption and auto-migrates old plaintext keys
+- Context efficiency: Anthropic prompt caching; token budget nudging; auto conversation compaction
+- Models: expanded Anthropic/OpenAI/openai-compatible model list
+
+### v1.0.0
+
+- Initial release: terminal REPL, tools (Read/Edit/Write/LS/Grep/Glob/Bash/WebFetch), sessions, hooks, MCP integration
+
+---
+
 ## Quick Start (run from source)
 
 ```bash
@@ -112,7 +130,7 @@ Add these to `~/.zshrc` or `~/.bashrc` to make them permanent.
 /keys openai-compatible <key>
 ```
 
-Keys are saved to `~/.guang-code/config.json`.
+Keys are saved to `~/.guang-code/config.json` (Windows uses DPAPI-encrypted storage when set via `/keys`).
 
 ### 3. CLI flag (one-shot override)
 
@@ -126,23 +144,39 @@ guang --api-key sk-ant-... "explain this code"
 
 | Model ID | Provider | Context | Notes |
 |---|---|---|---|
-| `claude-3-5-sonnet-20241022` | anthropic | 200K | **Default** — fast & smart |
+| `claude-sonnet-4-6` | anthropic | 200K | Latest Sonnet |
+| `claude-opus-4-6` | anthropic | 200K | Latest Opus |
+| `claude-haiku-4-5-20251001` | anthropic | 200K | Latest Haiku |
+| `claude-3-7-sonnet-20250219` | anthropic | 200K | Claude 3.7 Sonnet |
+| `claude-3-5-sonnet-20241022` | anthropic | 200K | Stable Sonnet |
 | `claude-3-5-haiku-20241022` | anthropic | 200K | Cheapest Claude |
-| `claude-3-opus-20240229` | anthropic | 200K | Most powerful Claude |
+| `claude-3-opus-20240229` | anthropic | 200K | Claude 3 Opus |
+| `gpt-4.1` | openai | 128K | GPT-4.1 |
+| `gpt-4.1-mini` | openai | 128K | GPT-4.1 Mini |
 | `gpt-4o` | openai | 128K | Flagship GPT |
 | `gpt-4o-mini` | openai | 128K | Cheapest GPT |
+| `o1` | openai | 200K | Reasoning |
+| `o1-mini` | openai | 200K | Fast reasoning |
 | `o3` | openai | 200K | Deep reasoning |
 | `o4-mini` | openai | 200K | Fast reasoning |
 | `MiniMax-Text-01` | minimax | 1M | 1M context window |
 | `abab6.5s-chat` | minimax | 245K | |
 | `deepseek-chat` | openai-compatible | 64K | Needs `GC_BASE_URL` |
 | `deepseek-reasoner` | openai-compatible | 64K | DeepSeek-R1 |
+| `qwen-plus` | openai-compatible | 128K | Needs `GC_BASE_URL` |
+| `qwen-max` | openai-compatible | 128K | Needs `GC_BASE_URL` |
+| `glm-4` | openai-compatible | 128K | Needs `GC_BASE_URL` |
 
 Switch models at any time with:
 ```
 /model gpt-4o
 /model MiniMax-Text-01
 /model deepseek-chat
+```
+
+List all models with:
+```
+/providers
 ```
 
 Or at startup:
