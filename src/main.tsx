@@ -20,7 +20,7 @@ const program = new Command()
 program
   .name('guang')
   .description('Guang Code — Terminal AI Coding Assistant')
-  .version('1.0.0')
+  .version('1.2.0')
   .option('-k, --api-key <key>', 'API key override for current session (any provider)')
   .option('-m, --model <model>', 'AI model to use (overrides config default)')
   .option('--auto', 'Start in auto permission mode (no confirmations)')
