@@ -4,9 +4,9 @@
 // ============================================================
 
 import { readFile, writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { homedir } from 'os'
-import type { GcConfig, PermissionMode, ProviderId, ProviderConfig } from '../types/index.js'
+import type { GcConfig, PermissionMode, ProviderId, ProviderConfig, TrustedProjectConfig } from '../types/index.js'
 import { decryptFromStore, encryptForStore, preferredSecretStore } from './secureStore.js'
 
 export const GC_DIR = join(homedir(), '.guang-code')
@@ -21,6 +21,7 @@ const DEFAULT_CONFIG: GcConfig = {
   outputStyle: 'default',
   permissionRules: [],
   memoryEnabled: true,
+  trustedProjects: {},
 }
 
 export async function loadConfig(): Promise<GcConfig> {
@@ -32,6 +33,7 @@ export async function loadConfig(): Promise<GcConfig> {
       ...DEFAULT_CONFIG,
       ...parsed,
       providers: { ...DEFAULT_CONFIG.providers, ...parsed.providers },
+      trustedProjects: { ...DEFAULT_CONFIG.trustedProjects, ...parsed.trustedProjects },
     }
   } catch {
     // First run — return defaults
@@ -127,6 +129,36 @@ export async function addAlwaysAllowRule(rule: string): Promise<void> {
     cfg.alwaysAllowRules.push(rule)
     await saveConfig(cfg)
   }
+}
+
+function normalizeProjectKey(cwd: string): string {
+  const abs = resolve(cwd)
+  return process.platform === 'win32' ? abs.toLowerCase() : abs
+}
+
+export async function setTrustedProjectConfig(opts: {
+  cwd: string
+  kind: keyof TrustedProjectConfig
+  hash: string | null
+}): Promise<void> {
+  const cfg = await loadConfig()
+  if (!cfg.trustedProjects) cfg.trustedProjects = {}
+  const key = normalizeProjectKey(opts.cwd)
+  const entry: TrustedProjectConfig = { ...(cfg.trustedProjects[key] ?? {}) }
+  if (opts.hash) {
+    ;(entry as any)[opts.kind] = { hash: opts.hash }
+  } else {
+    delete (entry as any)[opts.kind]
+  }
+  cfg.trustedProjects[key] = entry
+  await saveConfig(cfg)
+}
+
+export function getTrustedProjectConfigHash(config: GcConfig, cwd: string, kind: keyof TrustedProjectConfig): string | null {
+  const key = normalizeProjectKey(cwd)
+  const entry = config.trustedProjects?.[key]
+  const v = (entry as any)?.[kind]?.hash
+  return typeof v === 'string' && v ? v : null
 }
 
 // ── Provider detection ────────────────────────────────────────────

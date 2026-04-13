@@ -5,8 +5,8 @@
 import type { SlashCommand, AppState, SetState } from '../types/index.js'
 import { getTools } from '../tools/index.js'
 import { AgentTool } from '../tools/AgentTool.js'
-import { listSessions } from '../utils/sessionStorage.js'
-import { setProviderKey, setDefaultModel, setDefaultMode, loadConfig, setOutputStyle, setMemoryDirectory, setMemoryEnabled, addPermissionRule, removePermissionRule, clearPermissionRules } from '../utils/config.js'
+import { listSessions, loadSession, saveSession } from '../utils/sessionStorage.js'
+import { setProviderKey, setDefaultModel, setDefaultMode, loadConfig, setOutputStyle, setMemoryDirectory, setMemoryEnabled, addPermissionRule, removePermissionRule, clearPermissionRules, setTrustedProjectConfig } from '../utils/config.js'
 import { KNOWN_MODELS } from '../providers/index.js'
 import { loadCustomCommands } from '../utils/customCommands.js'
 import { isGitRepo, getGitStatus, getGitDiff, getCurrentBranch } from '../utils/git.js'
@@ -17,11 +17,17 @@ import { homedir } from 'os'
 import { addMemory, ensureMemoryIndexExists, getProjectMemoryDir, listMemoryEntries, readMemoryFile, removeMemory } from '../utils/memdir.js'
 import { addProjectCronTask, clearProjectCronTasks, listProjectCronTasks, removeProjectCronTask, setProjectCronTaskEnabled } from '../utils/cronTasks.js'
 import { parseCronExpression } from '../utils/cron.js'
+import { mkdir, writeFile } from 'fs/promises'
+import { dirname, resolve } from 'path'
+import { clearPmContext, ingestPmFiles, loadPmContext, renderPmContextForPrompt } from '../utils/pmContext.js'
+import { addDecision, exportDecisionLedgerMarkdown, linkDecision, loadDecisionLedger, renderDecisionForPrompt, renderDecisionList } from '../utils/decisionLedger.js'
 
 // ── /help ─────────────────────────────────────────────────────────────────────
 const helpCommand: SlashCommand = {
   name: 'help',
   description: 'Show available commands and keyboard shortcuts',
+  usage: '/help',
+  noArgs: true,
   async execute(_args, state, _setState) {
     const tools = getTools()
     const toolList = tools.map(t => `  • ${t.name.padEnd(14)} ${t.description.slice(0, 56)}`).join('\n')
@@ -48,6 +54,7 @@ SLASH COMMANDS:
   /providers          List all supported models & providers
   /keys <id> <key>    Set an API key (saves to ~/.guang-code/config.json)
   /mode <mode>        Switch permission mode (default/auto/plan)
+  /plan ...           Plan workflow (start/show/approve/reset)
   /style [name]       Switch output style (default/explanatory/learning)
   /permissions ...    Manage fine-grained permission rules
   /skills             List available skills
@@ -55,7 +62,15 @@ SLASH COMMANDS:
   /memory ...         Manage persistent project memory
   /cron ...           Manage scheduled tasks (project)
   /compact            Summarize and compress conversation history
+  /align ...          Ingest/scan files for alignment
+  /decision ...       Decision ledger tools
+  /impact ...         Change impact analysis
+  /pack ...           Generate an alignment pack
   /sessions           List recent sessions
+  /resume <id>        Resume a session in-place
+  /session ...        Session tools (new/rename/export)
+  /template ...       Templates (prd/story/release/competitor)
+  /trust ...          Manage project trust (mcp/hooks)
   /tasks              List background sub-agent tasks
   /task-cancel <id>   Cancel a running task
   /task-retry <id>    Retry a failed task (spawns a new one)
@@ -64,6 +79,8 @@ SLASH COMMANDS:
 ${customCommandsSection}
 KEYBOARD SHORTCUTS:
   Enter               Send message
+  Ctrl+P              Command palette
+  Tab                 Slash autocomplete (when input starts with "/")
   Ctrl+C              Cancel current request
   Ctrl+D              Exit
   ↑ / ↓              Browse message history
@@ -89,6 +106,8 @@ TIPS:
 const tasksCommand: SlashCommand = {
   name: 'tasks',
   description: 'List background sub-agent tasks',
+  usage: '/tasks',
+  noArgs: true,
   async execute(_args, _state, _setState) {
     const tasks = subagentTasks.list().slice(0, 20)
     if (tasks.length === 0) return 'No background tasks.'
@@ -158,6 +177,8 @@ const sendCommand: SlashCommand = {
 const clearCommand: SlashCommand = {
   name: 'clear',
   description: 'Clear conversation history and start fresh',
+  usage: '/clear',
+  noArgs: true,
   async execute(_args, _state, setState) {
     setState(prev => ({
       ...prev,
@@ -174,6 +195,8 @@ const clearCommand: SlashCommand = {
 const costCommand: SlashCommand = {
   name: 'cost',
   description: 'Show current session token usage and cost estimate',
+  usage: '/cost',
+  noArgs: true,
   async execute(_args, state, _setState) {
     const { inputTokens, outputTokens, model } = state
 
@@ -247,6 +270,8 @@ const modelCommand: SlashCommand = {
 const providersCommand: SlashCommand = {
   name: 'providers',
   description: 'List all supported providers and their models',
+  usage: '/providers',
+  noArgs: true,
   async execute(_args, state, _setState) {
     const cfg = await loadConfig()
 
@@ -361,7 +386,12 @@ const modeCommand: SlashCommand = {
   plan     Read-only until plan is approved`
     }
 
-    setState(prev => ({ ...prev, permissionMode: mode }))
+    setState(prev => ({
+      ...prev,
+      permissionMode: mode,
+      planApproved: mode === 'plan' ? false : prev.planApproved,
+      pendingPlan: mode === 'plan' ? prev.pendingPlan : undefined,
+    }))
     setDefaultMode(mode).catch(() => {})
     return `Permission mode switched to: ${mode}`
   },
@@ -371,6 +401,8 @@ const modeCommand: SlashCommand = {
 const compactCommand: SlashCommand = {
   name: 'compact',
   description: 'Compress conversation history to save context space',
+  usage: '/compact',
+  noArgs: true,
   async execute(_args, state, setState) {
     const { messages } = state
     if (messages.length < 4) {
@@ -396,6 +428,8 @@ const compactCommand: SlashCommand = {
 const sessionsCommand: SlashCommand = {
   name: 'sessions',
   description: 'List recent sessions',
+  usage: '/sessions',
+  noArgs: true,
   async execute(_args, _state, _setState) {
     const sessions = await listSessions()
     if (sessions.length === 0) return 'No saved sessions found.'
@@ -404,10 +438,645 @@ const sessionsCommand: SlashCommand = {
       const date   = new Date(s.updatedAt).toLocaleString()
       const tokens = s.inputTokens + s.outputTokens
       const msgs   = s.messages.filter(m => m.role !== 'system').length
-      return `  ${i + 1}. ${s.id.slice(0, 8)}  ${date}  ${msgs} msgs  ${tokens.toLocaleString()} tokens\n     ${s.cwd}  (${s.model})`
+      const title = s.title ? `  ${s.title}` : ''
+      return `  ${i + 1}. ${s.id.slice(0, 8)}  ${date}  ${msgs} msgs  ${tokens.toLocaleString()} tokens${title}\n     ${s.cwd}  (${s.model})`
     })
 
-    return `Recent sessions (resume with: guang -r <id>):\n\n${lines.join('\n')}`
+    return `Recent sessions (resume with: guang -r <number|idPrefix|fullId> or /resume ...):\n\n${lines.join('\n')}`
+  },
+}
+
+// ── /resume ───────────────────────────────────────────────────────────────────
+const resumeCommand: SlashCommand = {
+  name: 'resume',
+  description: 'Resume a saved session in-place: /resume <number|idPrefix|fullId>',
+  usage: '/resume <number|idPrefix|fullId>',
+  examples: [' /resume 1', ' /resume abcd1234'],
+  async execute(args, _state, setState) {
+    const raw = args.trim()
+    const sessions = await listSessions()
+    if (!raw) {
+      const lines = sessions.slice(0, 10).map((s, i) => {
+        const title = s.title ? `  ${s.title}` : ''
+        return `  ${i + 1}. ${s.id.slice(0, 8)}${title}\n     ${s.cwd}  (${s.model})`
+      })
+      return `Usage: /resume <number|idPrefix|fullId>\n\n${lines.join('\n')}`
+    }
+
+    let targetId: string | null = raw
+    if (/^\d+$/.test(raw)) {
+      const idx = Number(raw)
+      const s = Number.isFinite(idx) ? sessions[idx - 1] : undefined
+      targetId = s?.id ?? null
+    } else if (!/^[0-9a-fA-F-]{32,}$/.test(raw) || raw.length < 32) {
+      const pref = raw.toLowerCase()
+      const s = sessions.find(x => x.id.toLowerCase().startsWith(pref))
+      targetId = s?.id ?? null
+    }
+
+    const saved = targetId ? await loadSession(targetId) : null
+    if (!saved) return `Session not found: ${raw}`
+
+    setState(prev => ({
+      ...prev,
+      sessionId: saved.id,
+      sessionCreatedAt: saved.createdAt,
+      sessionTitle: saved.title,
+      messages: saved.messages,
+      inputTokens: saved.inputTokens,
+      outputTokens: saved.outputTokens,
+      model: saved.model,
+      cwd: saved.cwd,
+      planApproved: false,
+      pendingPlan: undefined,
+      error: null,
+    }))
+
+    return `Resumed session: ${saved.id.slice(0, 8)}  ${saved.title ?? ''}`.trim()
+  },
+}
+
+// ── /plan ─────────────────────────────────────────────────────────────────────
+const planCommand: SlashCommand = {
+  name: 'plan',
+  description: 'Plan workflow: /plan start|show|approve|reset|status',
+  usage: '/plan start|show|approve|reset|status',
+  examples: [' /plan start', ' /plan show', ' /plan approve'],
+  async execute(args, state, setState) {
+    const trimmed = args.trim()
+    const [sub] = trimmed.split(/\s+/)
+    const cmd = (sub || 'status').toLowerCase()
+
+    if (cmd === 'start') {
+      setState(prev => ({ ...prev, permissionMode: 'plan', planApproved: false, pendingPlan: undefined }))
+      return 'Plan mode started. Ask your request; review with /plan show; approve with /plan approve.'
+    }
+
+    if (cmd === 'show') {
+      return state.pendingPlan ? state.pendingPlan : 'No pending plan captured yet.'
+    }
+
+    if (cmd === 'approve') {
+      if (state.permissionMode !== 'plan') {
+        return 'Not in plan mode. Use: /plan start'
+      }
+      setState(prev => ({ ...prev, planApproved: true }))
+      return 'Plan approved. Tool execution is now allowed under normal permission prompts.'
+    }
+
+    if (cmd === 'reset') {
+      setState(prev => ({ ...prev, planApproved: false, pendingPlan: undefined }))
+      return 'Plan reset.'
+    }
+
+    if (cmd === 'status') {
+      const mode = state.permissionMode
+      const approved = state.planApproved ? 'approved' : 'not approved'
+      const hasPlan = state.pendingPlan ? 'yes' : 'no'
+      return `Plan status:\n- mode: ${mode}\n- approved: ${approved}\n- pending plan: ${hasPlan}`
+    }
+
+    return 'Usage: /plan start|show|approve|reset|status'
+  },
+}
+
+function renderTemplate(name: string, rawArgs: string): string | null {
+  const n = (name ?? '').toLowerCase()
+  const topic = rawArgs.trim()
+  const header = topic ? `# ${topic}\n\n` : ''
+
+  if (n === 'prd') {
+    return header + [
+      '## 背景',
+      '- 问题/机会：',
+      '- 目标：',
+      '',
+      '## 用户与场景',
+      '- 目标用户：',
+      '- 典型场景：',
+      '',
+      '## 方案',
+      '- 核心流程：',
+      '- 交互稿/原型链接：',
+      '',
+      '## 需求拆解',
+      '- Must-have：',
+      '- Nice-to-have：',
+      '',
+      '## 数据与指标',
+      '- 指标定义：',
+      '- 目标值：',
+      '',
+      '## 风险与边界',
+      '- 风险：',
+      '- 不做什么：',
+      '',
+      '## 里程碑',
+      '- 设计：',
+      '- 开发：',
+      '- 验收/发布：',
+    ].join('\n')
+  }
+
+  if (n === 'user-story' || n === 'story') {
+    return header + [
+      '## User Story',
+      '- As a ...',
+      '- I want ...',
+      '- So that ...',
+      '',
+      '## Acceptance Criteria',
+      '- Given ... When ... Then ...',
+      '- Given ... When ... Then ...',
+      '',
+      '## Notes',
+      '- 约束：',
+      '- 埋点：',
+      '- 依赖：',
+    ].join('\n')
+  }
+
+  if (n === 'release-note' || n === 'release') {
+    return header + [
+      '## Highlights',
+      '- ',
+      '',
+      '## What’s New',
+      '- ',
+      '',
+      '## Improvements',
+      '- ',
+      '',
+      '## Fixes',
+      '- ',
+      '',
+      '## Known Issues',
+      '- ',
+      '',
+      '## Rollout',
+      '- 灰度范围：',
+      '- 回滚方案：',
+    ].join('\n')
+  }
+
+  if (n === 'competitor' || n === 'compete') {
+    return header + [
+      '## 竞品概览',
+      '- 产品名称：',
+      '- 目标人群：',
+      '- 定价：',
+      '',
+      '## 核心能力对比',
+      '| 维度 | 竞品 | 我们 | 结论 |',
+      '| --- | --- | --- | --- |',
+      '| | | | |',
+      '',
+      '## 体验走查',
+      '- 关键路径：',
+      '- 亮点：',
+      '- 痛点：',
+      '',
+      '## 机会点',
+      '- 短期：',
+      '- 中期：',
+      '- 长期：',
+    ].join('\n')
+  }
+
+  return null
+}
+
+// ── /template ─────────────────────────────────────────────────────────────────
+const templateCommand: SlashCommand = {
+  name: 'template',
+  description: 'Templates: /template list | /template <name> [topic] | /template save <name> <file> [topic]',
+  usage: '/template list | /template <name> [topic] | /template save <name> <file> [topic]',
+  examples: [' /template prd 新功能名称', ' /template save prd ./PRD.md 新功能名称'],
+  async execute(args, state, _setState) {
+    const trimmed = args.trim()
+    const [a, b, ...rest] = trimmed.split(/\s+/)
+    const cmd = (a || 'list').toLowerCase()
+
+    if (cmd === 'list') {
+      return [
+        'Templates:',
+        '- prd [topic]',
+        '- user-story|story [topic]',
+        '- release-note|release [topic]',
+        '- competitor [topic]',
+        '',
+        'Usage:',
+        '  /template prd 新功能名称',
+        '  /template save prd ./PRD.md 新功能名称',
+      ].join('\n')
+    }
+
+    if (cmd === 'save') {
+      const name = (b || '').trim()
+      const file = (rest[0] || '').trim()
+      const topic = rest.slice(1).join(' ')
+      if (!name || !file) return 'Usage: /template save <name> <file> [topic]'
+      const content = renderTemplate(name, topic)
+      if (!content) return `Unknown template: ${name}. Use: /template list`
+      const abs = resolve(state.cwd, file)
+      await mkdir(dirname(abs), { recursive: true })
+      await writeFile(abs, content, 'utf-8')
+      return `Template saved: ${abs}`
+    }
+
+    const content = renderTemplate(cmd, [b, ...rest].join(' '))
+    if (!content) return `Unknown template: ${cmd}. Use: /template list`
+    return content
+  },
+}
+
+// ── /align ────────────────────────────────────────────────────────────────────
+const alignCommand: SlashCommand = {
+  name: 'align',
+  description: 'Ingest/scan files for PM alignment: /align scan|add|list|show|clear',
+  usage: '/align scan|add|list|show|clear',
+  examples: [' /align scan', ' /align add README.md docs/**/*.md product/**/*.md', ' /align list'],
+  async execute(args, state, _setState) {
+    const trimmed = args.trim()
+    const [sub, ...rest] = trimmed.split(/\s+/)
+    const cmd = (sub || 'list').toLowerCase()
+
+    if (cmd === 'list') {
+      const ctx = await loadPmContext(state.cwd)
+      if (ctx.files.length === 0) return 'No ingested files. Use: /align scan or /align add <glob>'
+      const lines = ctx.files.slice(0, 30).map((f, i) => `  ${i + 1}. ${f.path}  (${Math.round(f.size / 1024)}KB)`)
+      const more = ctx.files.length > 30 ? `\n  … (${ctx.files.length - 30} more)` : ''
+      return `Aligned files:\n${lines.join('\n')}${more}`
+    }
+
+    if (cmd === 'clear') {
+      await clearPmContext(state.cwd)
+      return 'Alignment context cleared.'
+    }
+
+    if (cmd === 'scan') {
+      const patterns = [
+        'README.md',
+        'docs/**/*.{md,txt}',
+        'product/**/*.{md,txt}',
+        'design/**/*.{md,txt}',
+        '*.{md,txt}',
+      ]
+      const res = await ingestPmFiles({ cwd: state.cwd, patternsOrPaths: patterns, maxFiles: 50 })
+      return `Scan complete. added=${res.added} skipped=${res.skipped} total=${res.total}`
+    }
+
+    if (cmd === 'add') {
+      if (rest.length === 0) return 'Usage: /align add <globOrPath> [more...]'
+      const items = rest.flatMap(t => t.split(',')).map(s => s.trim()).filter(Boolean)
+      const res = await ingestPmFiles({ cwd: state.cwd, patternsOrPaths: items, maxFiles: 100 })
+      return `Ingest complete. added=${res.added} skipped=${res.skipped} total=${res.total}`
+    }
+
+    if (cmd === 'show') {
+      const key = rest.join(' ').trim()
+      if (!key) return 'Usage: /align show <number|path>'
+      const ctx = await loadPmContext(state.cwd)
+      let f = null as any
+      if (/^\d+$/.test(key)) {
+        const idx = Number(key)
+        f = Number.isFinite(idx) ? ctx.files[idx - 1] : null
+      } else {
+        const k = key.replace(/\\/g, '/')
+        f = ctx.files.find(x => x.path === k) ?? null
+      }
+      if (!f) return `Not found: ${key}`
+      return `[FILE] ${f.path}\n\n${f.excerpt}`
+    }
+
+    return 'Usage: /align scan|add|list|show|clear'
+  },
+}
+
+// ── /decision ─────────────────────────────────────────────────────────────────
+const decisionCommand: SlashCommand = {
+  name: 'decision',
+  description: 'Decision ledger: /decision add|list|show|link|export',
+  usage: '/decision add|list|show|link|export|extract',
+  examples: [' /decision add 定价策略 :: 采用按席位计费', ' /decision list', ' /decision export ./DECISIONS.md', ' /decision extract'],
+  async execute(args, state, setState) {
+    const trimmed = args.trim()
+    const [sub, ...rest] = trimmed.split(/\s+/)
+    const cmd = (sub || 'list').toLowerCase()
+
+    if (cmd === 'list') {
+      const ledger = await loadDecisionLedger(state.cwd)
+      return renderDecisionList(ledger, 30)
+    }
+
+    if (cmd === 'add') {
+      const raw = rest.join(' ').trim()
+      if (!raw) return 'Usage: /decision add <title> :: <summary>  (or :: {json})'
+      const parts = raw.split('::')
+      const title = (parts[0] ?? '').trim()
+      const tail = (parts.slice(1).join('::') ?? '').trim()
+      if (!title || !tail) return 'Usage: /decision add <title> :: <summary>  (or :: {json})'
+
+      let payload: any = null
+      if (tail.startsWith('{')) {
+        try { payload = JSON.parse(tail) } catch { payload = null }
+      }
+
+      const summary = payload?.summary ? String(payload.summary) : tail
+      const d = await addDecision(state.cwd, {
+        title,
+        summary,
+        rationale: payload?.rationale ? String(payload.rationale) : undefined,
+        owner: payload?.owner ? String(payload.owner) : undefined,
+        due: payload?.due ? String(payload.due) : undefined,
+        alternatives: Array.isArray(payload?.alternatives) ? payload.alternatives.map(String) : undefined,
+        links: Array.isArray(payload?.links) ? payload.links.map(String) : undefined,
+        source: { sessionId: state.sessionId },
+      })
+      return `Decision recorded: ${d.id.slice(0, 8)}  ${d.title}`
+    }
+
+    if (cmd === 'show') {
+      const key = rest.join(' ').trim()
+      if (!key) return 'Usage: /decision show <number|idPrefix>'
+      const ledger = await loadDecisionLedger(state.cwd)
+      const items = ledger.decisions.slice().sort((a, b) => b.updatedAt - a.updatedAt)
+      let d = null as any
+      if (/^\d+$/.test(key)) {
+        const idx = Number(key)
+        d = Number.isFinite(idx) ? items[idx - 1] : null
+      } else {
+        d = items.find(x => x.id.startsWith(key) || x.id.slice(0, 8) === key) ?? null
+      }
+      if (!d) return `Not found: ${key}`
+      const lines = [
+        `id: ${d.id}`,
+        `title: ${d.title}`,
+        d.owner ? `owner: ${d.owner}` : null,
+        d.due ? `due: ${d.due}` : null,
+        `updated: ${new Date(d.updatedAt).toLocaleString()}`,
+        '',
+        d.summary,
+        d.rationale ? `\nRationale:\n${d.rationale}` : null,
+        d.alternatives?.length ? `\nAlternatives:\n- ${d.alternatives.join('\n- ')}` : null,
+        d.links?.length ? `\nLinks:\n- ${d.links.join('\n- ')}` : null,
+      ].filter(Boolean) as string[]
+      return lines.join('\n')
+    }
+
+    if (cmd === 'link') {
+      const [id, ...rest2] = rest
+      const link = rest2.join(' ').trim()
+      if (!id || !link) return 'Usage: /decision link <idPrefix> <link>'
+      const d = await linkDecision(state.cwd, id, link)
+      if (!d) return `Not found: ${id}`
+      return `Linked: ${d.id.slice(0, 8)}  (+1 link)`
+    }
+
+    if (cmd === 'export') {
+      const file = rest.join(' ').trim() || './DECISIONS.md'
+      const abs = await exportDecisionLedgerMarkdown(state.cwd, file)
+      return `Decision ledger exported: ${abs}`
+    }
+
+    if (cmd === 'extract') {
+      const ledger = await loadDecisionLedger(state.cwd)
+      const ctx = await loadPmContext(state.cwd)
+      const prompt = [
+        'You are a PM assistant. Extract new or updated decisions from the conversation and the files.',
+        'Return a concise list of decisions the team should record in a decision ledger.',
+        '',
+        'Format:',
+        '- Provide a numbered list of decisions.',
+        '- For each: Title, Summary, Rationale (optional), Owner (optional), Due (optional), Links (optional).',
+        '',
+        'Existing decisions:',
+        renderDecisionForPrompt(ledger),
+        '',
+        'Aligned files:',
+        renderPmContextForPrompt(ctx),
+        '',
+        'Conversation (most recent messages):',
+        state.messages
+          .filter(m => (m.role === 'user' || m.role === 'assistant') && !m.toolUseId)
+          .slice(-30)
+          .map(m => `${m.role.toUpperCase()}: ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`)
+          .join('\n\n'),
+      ].join('\n')
+      setState(prev => ({ ...prev, pendingAutomatedPrompt: { label: 'Decision Extract', prompt } }))
+      return 'Extracting decisions…'
+    }
+
+    return 'Usage: /decision add|list|show|link|export|extract'
+  },
+}
+
+// ── /impact ───────────────────────────────────────────────────────────────────
+const impactCommand: SlashCommand = {
+  name: 'impact',
+  description: 'Change impact analysis: /impact <change description>',
+  usage: '/impact <change description>',
+  examples: [' /impact 把「开关默认开」改成默认关，并增加灰度开关'],
+  async execute(args, state, setState) {
+    const change = args.trim()
+    if (!change) return 'Usage: /impact <change description>'
+    const ledger = await loadDecisionLedger(state.cwd)
+    const ctx = await loadPmContext(state.cwd)
+    const prompt = [
+      'You are a senior product manager and delivery lead.',
+      'Analyze the impact of the following change request.',
+      'Use ONLY the provided aligned files and decision ledger as the source of truth; if information is missing, call it out as open questions.',
+      '',
+      `Change request:\n${change}`,
+      '',
+      'Decision ledger:',
+      renderDecisionForPrompt(ledger),
+      '',
+      'Aligned files:',
+      renderPmContextForPrompt(ctx),
+      '',
+      'Output (use headings):',
+      '1) Summary (what changes, what doesn’t)',
+      '2) Affected decisions (which decision IDs to revisit, if any)',
+      '3) Affected documents (file path → suggested edits as bullet list)',
+      '4) Acceptance criteria changes',
+      '5) Analytics/metrics impact',
+      '6) Risks & rollout considerations',
+      '7) Open questions',
+    ].join('\n')
+    setState(prev => ({ ...prev, pendingAutomatedPrompt: { label: 'Change Impact', prompt } }))
+    return 'Running change impact analysis…'
+  },
+}
+
+// ── /pack ─────────────────────────────────────────────────────────────────────
+const packCommand: SlashCommand = {
+  name: 'pack',
+  description: 'Alignment pack: /pack weekly | /pack feature <name>',
+  usage: '/pack weekly | /pack feature <name>',
+  examples: [' /pack weekly', ' /pack feature 新支付页'],
+  async execute(args, state, setState) {
+    const trimmed = args.trim()
+    const [sub, ...rest] = trimmed.split(/\s+/)
+    const cmd = (sub || '').toLowerCase()
+    const title = rest.join(' ').trim()
+
+    if (!cmd || (cmd === 'feature' && !title)) {
+      return 'Usage: /pack weekly | /pack feature <name>'
+    }
+
+    const ledger = await loadDecisionLedger(state.cwd)
+    const ctx = await loadPmContext(state.cwd)
+    const kind = cmd === 'weekly' ? 'Weekly Alignment Pack' : `Feature Alignment Pack: ${title}`
+
+    const prompt = [
+      'You are a product lead preparing an alignment pack for cross-functional stakeholders.',
+      'Use ONLY the provided aligned files and decision ledger; call out missing info explicitly.',
+      '',
+      `Pack type: ${kind}`,
+      '',
+      'Decision ledger:',
+      renderDecisionForPrompt(ledger),
+      '',
+      'Aligned files:',
+      renderPmContextForPrompt(ctx),
+      '',
+      'Output (Markdown):',
+      '# TL;DR',
+      '# Goals',
+      '# Scope (In / Out)',
+      '# Current Status',
+      '# Key Decisions (with IDs)',
+      '# Risks & Mitigations',
+      '# Dependencies',
+      '# Next Steps / Owners',
+      '# Questions to Resolve',
+    ].join('\n')
+
+    setState(prev => ({ ...prev, pendingAutomatedPrompt: { label: kind, prompt } }))
+    return 'Generating alignment pack…'
+  },
+}
+
+// ── /session ──────────────────────────────────────────────────────────────────
+const sessionCommand: SlashCommand = {
+  name: 'session',
+  description: 'Session tools: /session new|rename|export',
+  usage: '/session new [title] | /session rename <title> | /session export [file]',
+  examples: [' /session new 需求评审', ' /session rename 增长实验 A', ' /session export ./session.md'],
+  async execute(args, state, setState) {
+    const trimmed = args.trim()
+    const [sub, ...rest] = trimmed.split(/\s+/)
+    const cmd = (sub || '').toLowerCase()
+
+    if (cmd === 'new') {
+      const title = rest.join(' ').trim() || undefined
+      const now = Date.now()
+      setState(prev => ({
+        ...prev,
+        sessionId: randomUUID(),
+        sessionCreatedAt: now,
+        sessionTitle: title,
+        messages: [],
+        inputTokens: 0,
+        outputTokens: 0,
+        planApproved: false,
+        pendingPlan: undefined,
+        error: null,
+      }))
+      return title ? `New session created: ${title}` : 'New session created.'
+    }
+
+    if (cmd === 'rename') {
+      const title = rest.join(' ').trim()
+      if (!title) return 'Usage: /session rename <title>'
+      setState(prev => ({ ...prev, sessionTitle: title }))
+      await saveSession({
+        id: state.sessionId,
+        title,
+        createdAt: state.sessionCreatedAt,
+        updatedAt: Date.now(),
+        cwd: state.cwd,
+        model: state.model,
+        messages: state.messages,
+        inputTokens: state.inputTokens,
+        outputTokens: state.outputTokens,
+      })
+      return `Session renamed: ${title}`
+    }
+
+    if (cmd === 'export') {
+      const file = rest.join(' ').trim() || `./guang-session-${state.sessionId.slice(0, 8)}.md`
+      const abs = resolve(state.cwd, file)
+      await mkdir(dirname(abs), { recursive: true })
+      const header = [
+        `# ${state.sessionTitle ?? 'Guang Code Session'}`,
+        '',
+        `- Session: ${state.sessionId}`,
+        `- Updated: ${new Date().toISOString()}`,
+        `- CWD: ${state.cwd}`,
+        `- Model: ${state.model}`,
+        '',
+        '---',
+        '',
+      ].join('\n')
+
+      const body = state.messages
+        .filter(m => m.role === 'user' || m.role === 'assistant')
+        .filter(m => !m.toolUseId)
+        .map(m => {
+          const label = m.role === 'user' ? 'User' : 'Assistant'
+          const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content)
+          return `## ${label}\n\n${text}\n`
+        })
+        .join('\n')
+
+      await writeFile(abs, header + body, 'utf-8')
+      return `Session exported: ${abs}`
+    }
+
+    return 'Usage: /session new [title] | /session rename <title> | /session export [file]'
+  },
+}
+
+// ── /trust ────────────────────────────────────────────────────────────────────
+const trustCommand: SlashCommand = {
+  name: 'trust',
+  description: 'Manage project trust: /trust list | /trust revoke <mcp|hooks> [cwd]',
+  usage: '/trust list | /trust revoke <mcp|hooks> [cwd]',
+  examples: [' /trust list', ' /trust revoke mcp', ' /trust revoke hooks ../other-project'],
+  async execute(args, state, _setState) {
+    const trimmed = args.trim()
+    const [sub, kindRaw, ...rest] = trimmed.split(/\s+/)
+    const cmd = (sub || 'list').toLowerCase()
+
+    if (cmd === 'list') {
+      const cfg = await loadConfig()
+      const tp = cfg.trustedProjects ?? {}
+      const keys = Object.keys(tp)
+      if (keys.length === 0) return 'No trusted projects.'
+      const lines = keys.slice(0, 50).map(k => {
+        const v: any = tp[k]
+        const m = v?.mcp?.hash ? String(v.mcp.hash).slice(0, 16) : ''
+        const h = v?.hooks?.hash ? String(v.hooks.hash).slice(0, 16) : ''
+        const parts = [
+          m ? `mcp:${m}` : null,
+          h ? `hooks:${h}` : null,
+        ].filter(Boolean)
+        return `- ${k}  ${parts.join('  ')}`
+      })
+      return `Trusted projects:\n${lines.join('\n')}`
+    }
+
+    if (cmd === 'revoke') {
+      const kind = (kindRaw || '').toLowerCase()
+      if (kind !== 'mcp' && kind !== 'hooks') return 'Usage: /trust revoke <mcp|hooks> [cwd]'
+      const cwd = rest.join(' ').trim() || state.cwd
+      await setTrustedProjectConfig({ cwd, kind: kind as any, hash: null })
+      return `Revoked trust: ${kind} (${cwd})`
+    }
+
+    return 'Usage: /trust list | /trust revoke <mcp|hooks> [cwd]'
   },
 }
 
@@ -415,6 +1084,8 @@ const sessionsCommand: SlashCommand = {
 const exitCommand: SlashCommand = {
   name: 'exit',
   description: 'Exit Guang Code',
+  usage: '/exit',
+  noArgs: true,
   async execute() {
     process.exit(0)
   },
@@ -579,6 +1250,8 @@ const permissionsCommand: SlashCommand = {
 const skillsCommand: SlashCommand = {
   name: 'skills',
   description: 'List available skills from ~/.guang-code/skills and .guang/skills',
+  usage: '/skills',
+  noArgs: true,
   async execute(_args, state, _setState) {
     const skills = loadAllSkills(state.cwd)
     if (skills.length === 0) {
@@ -805,6 +1478,7 @@ export const builtInSlashCommands: SlashCommand[] = [
   providersCommand,
   keysCommand,
   modeCommand,
+  planCommand,
   styleCommand,
   permissionsCommand,
   skillsCommand,
@@ -812,7 +1486,15 @@ export const builtInSlashCommands: SlashCommand[] = [
   memoryCommand,
   cronCommand,
   compactCommand,
+  alignCommand,
+  decisionCommand,
+  impactCommand,
+  packCommand,
   sessionsCommand,
+  resumeCommand,
+  sessionCommand,
+  templateCommand,
+  trustCommand,
   tasksCommand,
   taskCancelCommand,
   taskRetryCommand,

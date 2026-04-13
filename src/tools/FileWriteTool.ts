@@ -4,7 +4,7 @@
 
 import { writeFile, mkdir } from 'fs/promises'
 import { dirname } from 'path'
-import { assertSafeLocalPath, resolveRealPathWithinCwd } from '../utils/pathSafety.js'
+import { assertSafeLocalPath, isProtectedProjectFile, resolveRealPathWithinCwd } from '../utils/pathSafety.js'
 import type { ToolDef, ToolContext, ToolResult } from '../types/index.js'
 
 export const FileWriteTool: ToolDef = {
@@ -30,7 +30,7 @@ export const FileWriteTool: ToolDef = {
     let filePath = ''
     const content = input.content as string
 
-    if (ctx.permissionMode === 'plan') {
+    if (ctx.permissionMode === 'plan' && !ctx.planApproved) {
       return {
         content: 'Plan mode active: file writes are not allowed until the plan is approved.',
         isError: true,
@@ -40,6 +40,9 @@ export const FileWriteTool: ToolDef = {
     try {
       filePath = assertSafeLocalPath({ cwd: ctx.cwd, inputPath: String(input.file_path ?? '') })
       await resolveRealPathWithinCwd({ cwd: ctx.cwd, absPath: filePath })
+      if (isProtectedProjectFile({ cwd: ctx.cwd, absPath: filePath })) {
+        return { content: `Blocked write to protected project file: ${filePath}`, isError: true }
+      }
       await mkdir(dirname(filePath), { recursive: true })
       await writeFile(filePath, content, 'utf-8')
       const lines = content.split('\n').length

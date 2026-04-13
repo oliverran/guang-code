@@ -3,7 +3,10 @@
 //  Works with any LLMProvider: Anthropic, OpenAI, MiniMax, etc.
 // ============================================================
 
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
+import fs from 'fs'
+import path from 'path'
+import { readFile } from 'fs/promises'
 import type {
   SessionMessage,
   ToolDef,
@@ -15,6 +18,7 @@ import type {
   ChatMessage,
   ProviderTool,
   ToolCall,
+  PermissionRule,
 } from '../types/index.js'
 import { getTools, getToolByName } from '../tools/index.js'
 import { createProvider } from '../providers/index.js'
@@ -22,7 +26,7 @@ import { loadProjectInstructions } from './projectInstructions.js'
 import { mcpManager } from './mcpClient.js'
 import { createMcpTools } from '../tools/McpTool.js'
 import { hooksManager } from './hooks/index.js'
-import { loadConfig, addAlwaysAllowRule } from './config.js'
+import { addPermissionRule, getTrustedProjectConfigHash, loadConfig, setTrustedProjectConfig } from './config.js'
 import { runSubagentSession } from './subagentRun.js'
 import { getOutputStylePrompt } from './outputStyle.js'
 import { decidePermission, loadProjectPermissionRules } from './permissions.js'
@@ -30,6 +34,7 @@ import { loadMemoryForPrompt } from './memdir.js'
 import { redactIfSecrets } from './secretScanner.js'
 import { parseTokenBudget } from './tokenBudget.js'
 import { createBudgetTracker, checkTokenBudget } from './tokenBudgetTracker.js'
+import { validateUrlString } from './webFetchSafety.js'
 
 // ── System Prompt ──────────────────────────────────────────────────
 const SYSTEM_PROMPT = `You are Guang Code, a powerful AI coding assistant running in the terminal. You help users with software engineering tasks including:
@@ -76,6 +81,7 @@ export type QueryOptions = {
   model: string
   cwd: string
   permissionMode: PermissionMode
+  planApproved?: boolean
   providerConfig: GcConfig
   /** Optional API key override (from --api-key CLI flag) */
   apiKeyOverride?: string
@@ -89,6 +95,114 @@ const AUTO_COMPACT_CHAR_THRESHOLD = 60000
 const AUTO_COMPACT_TAIL_MESSAGES = 8
 const AUTO_COMPACT_MAX_FAILURES = 3
 
+function sha256Hex(text: string): string {
+  return createHash('sha256').update(text).digest('hex')
+}
+
+async function readTextIfExists(fp: string): Promise<string | null> {
+  try {
+    return await readFile(fp, 'utf-8')
+  } catch {
+    return null
+  }
+}
+
+function isDangerousAlwaysAllowTool(toolName: string): boolean {
+  return toolName === 'Bash' || toolName === 'Write' || toolName === 'Edit' || toolName === 'WebFetch'
+}
+
+function summarizeMcpConfigForPrompt(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw) as any
+    const servers = parsed?.mcpServers && typeof parsed.mcpServers === 'object' ? parsed.mcpServers : {}
+    const names = Object.keys(servers)
+    if (names.length === 0) return 'No mcpServers found.'
+    const lines: string[] = []
+    for (const name of names.slice(0, 20)) {
+      const s = servers[name] ?? {}
+      const cmd = typeof s.command === 'string' ? s.command : ''
+      const args = Array.isArray(s.args) ? s.args.map(String).slice(0, 20) : []
+      const envKeys = s.env && typeof s.env === 'object' ? Object.keys(s.env).slice(0, 20) : []
+      lines.push(`- ${name}: ${cmd} ${args.join(' ')}`.trim())
+      if (envKeys.length) lines.push(`  env keys: ${envKeys.join(', ')}`)
+    }
+    if (names.length > 20) lines.push(`… (${names.length - 20} more servers)`)
+    return lines.join('\n')
+  } catch {
+    return raw.length > 2000 ? raw.slice(0, 2000) + '\n…' : raw
+  }
+}
+
+function summarizeHooksConfigForPrompt(raw: string): string {
+  try {
+    const parsed = JSON.parse(raw) as any
+    if (!parsed || typeof parsed !== 'object') return 'Invalid hooks config.'
+    const lines: string[] = []
+    for (const [event, hooks] of Object.entries(parsed)) {
+      if (!Array.isArray(hooks)) continue
+      lines.push(`${event}:`)
+      for (const h of hooks.slice(0, 10) as any[]) {
+        const cmd = typeof h?.command === 'string' ? h.command : ''
+        const matcher = typeof h?.matcher === 'string' ? h.matcher : ''
+        const suffix = matcher ? ` (matcher: ${matcher})` : ''
+        lines.push(`- ${cmd}${suffix}`)
+      }
+      if (hooks.length > 10) lines.push(`- … (${hooks.length - 10} more)`)
+    }
+    return lines.length ? lines.join('\n') : 'No hooks configured.'
+  } catch {
+    return raw.length > 2000 ? raw.slice(0, 2000) + '\n…' : raw
+  }
+}
+
+async function persistGranularAllowForDangerousTool(opts: {
+  toolName: string
+  toolInput: Record<string, unknown> | undefined
+  cwd: string
+}): Promise<PermissionRule | null> {
+  const n = opts.toolName
+  const i = opts.toolInput
+  if (!i) return null
+
+  if (n === 'WebFetch') {
+    const raw = i.url as string | undefined
+    if (!raw) return null
+    const v = validateUrlString(raw)
+    return {
+      effect: 'allow',
+      tool: 'webfetch',
+      domain: v.hostname,
+      description: 'User-approved persistent allow for WebFetch domain',
+    }
+  }
+
+  if (n === 'Write' || n === 'Edit') {
+    const raw = i.file_path as string | undefined
+    if (!raw) return null
+    const abs = path.resolve(opts.cwd, raw)
+    const rel = path.relative(opts.cwd, abs).replace(/\\/g, '/')
+    return {
+      effect: 'allow',
+      tool: n.toLowerCase(),
+      path: rel || abs,
+      description: 'User-approved persistent allow for file path',
+    }
+  }
+
+  if (n === 'Bash') {
+    const cmd = i.command as string | undefined
+    if (!cmd) return null
+    return {
+      effect: 'allow',
+      tool: 'bash',
+      command: cmd,
+      description: 'User-approved persistent allow for bash command',
+    }
+  }
+
+  return null
+}
+
 export async function runQuery(options: QueryOptions): Promise<{
   messages: SessionMessage[]
   inputTokens: number
@@ -99,6 +213,7 @@ export async function runQuery(options: QueryOptions): Promise<{
     model,
     cwd,
     permissionMode,
+    planApproved = false,
     providerConfig,
     apiKeyOverride,
     onPermissionRequest,
@@ -118,39 +233,109 @@ export async function runQuery(options: QueryOptions): Promise<{
 
   const config = await loadConfig()
   const alwaysAllowRules = config.alwaysAllowRules || []
-  const permissionRules = [
+  let permissionRules: PermissionRule[] = [
     ...(config.permissionRules || []),
     ...loadProjectPermissionRules(cwd),
   ]
   const outputStyle = getOutputStylePrompt(config.outputStyle)
 
+  const mcpConfigPath = path.join(cwd, '.guang', 'mcp.json')
+  const hooksConfigPath = path.join(cwd, '.guang', 'hooks.json')
+
+  const mcpConfigText = fs.existsSync(mcpConfigPath) ? await readTextIfExists(mcpConfigPath) : null
+  const hooksConfigText = fs.existsSync(hooksConfigPath) ? await readTextIfExists(hooksConfigPath) : null
+
+  const mcpHash = mcpConfigText ? sha256Hex(mcpConfigText) : null
+  const hooksHash = hooksConfigText ? sha256Hex(hooksConfigText) : null
+
+  const trustedMcpHash = mcpHash ? getTrustedProjectConfigHash(config, cwd, 'mcp') : null
+  const trustedHooksHash = hooksHash ? getTrustedProjectConfigHash(config, cwd, 'hooks') : null
+
+  let enableMcp = Boolean(mcpConfigText) && mcpHash !== null && trustedMcpHash === mcpHash
+  let enableHooks = Boolean(hooksConfigText) && hooksHash !== null && trustedHooksHash === hooksHash
+
+  if (permissionMode === 'auto' || permissionMode === 'plan') {
+    enableMcp = false
+    enableHooks = false
+  }
+
+  if (mcpConfigText && mcpHash && !enableMcp && permissionMode === 'default') {
+    const preview = summarizeMcpConfigForPrompt(mcpConfigText)
+    const decision = await onPermissionRequest(
+      'MCP Project Config',
+      `Approve launching MCP servers for this project?\nFile: ${mcpConfigPath}\nFingerprint: ${mcpHash.slice(0, 16)}\n\n${preview}`
+    )
+    if (decision === 'always_allow') {
+      await setTrustedProjectConfig({ cwd, kind: 'mcp', hash: mcpHash })
+      enableMcp = true
+    } else if (decision === 'allow_once' || decision === true) {
+      enableMcp = true
+    }
+  }
+
+  if (hooksConfigText && hooksHash && !enableHooks) {
+    const preview = summarizeHooksConfigForPrompt(hooksConfigText)
+    const decision = await onPermissionRequest(
+      'Hooks Project Config',
+      `Approve running project hooks for this project?\nFile: ${hooksConfigPath}\nFingerprint: ${hooksHash.slice(0, 16)}\n\n${preview}`
+    )
+    if (decision === 'always_allow') {
+      await setTrustedProjectConfig({ cwd, kind: 'hooks', hash: hooksHash })
+      enableHooks = true
+    } else if (decision === 'allow_once' || decision === true) {
+      enableHooks = true
+    }
+  }
+
   const tools = getTools()
   let activeTool: { name: string; input: Record<string, unknown> } | null = null
+  let lastPermissionReason: string | null = null
   const toolContext: ToolContext = {
     cwd,
     permissionMode,
+    planApproved,
     model,
     providerConfig,
     apiKeyOverride,
     onPermissionRequest: async (toolName: string, description: string) => {
       // 1. Check if tool is in alwaysAllowRules
-      if (alwaysAllowRules.includes(toolName)) {
+      if (alwaysAllowRules.includes(toolName) && !isDangerousAlwaysAllowTool(toolName)) {
         return true
       }
 
-      const decision = decidePermission({
+      const res = decidePermission({
         permissionMode,
         rules: permissionRules,
         toolName,
         toolInput: activeTool && activeTool.name === toolName ? activeTool.input : undefined,
         cwd,
+        planApproved,
       })
-      if (decision === 'allow') return true
-      if (decision === 'deny') return false
+      lastPermissionReason = res.reason ?? null
+      if (res.decision === 'allow') return true
+      if (res.decision === 'deny') return false
 
-      const approved = await onPermissionRequest(toolName, description)
+      const extra = res.reason ? `\n\nReason:\n${res.reason}` : ''
+      const approved = await onPermissionRequest(toolName, description + extra)
       if (approved === 'always_allow') {
-        await addAlwaysAllowRule(toolName)
+        if (isDangerousAlwaysAllowTool(toolName)) {
+          const rule = await persistGranularAllowForDangerousTool({
+            toolName,
+            toolInput: activeTool && activeTool.name === toolName ? activeTool.input : undefined,
+            cwd,
+          })
+          if (!rule) return true
+          await addPermissionRule(rule)
+          permissionRules.push(rule)
+          return true
+        }
+        const rule: PermissionRule = {
+          effect: 'allow',
+          tool: toolName.toLowerCase(),
+          description: 'User-approved persistent allow for tool',
+        }
+        await addPermissionRule(rule)
+        permissionRules.push(rule)
         return true
       }
       if (approved === 'allow_once') {
@@ -160,16 +345,20 @@ export async function runQuery(options: QueryOptions): Promise<{
     }
   }
 
-  // Load MCP tools dynamically
-  await mcpManager.initializeAll(cwd)
-  const mcpClients = mcpManager.getClients()
-  for (const [serverName, client] of mcpClients.entries()) {
-    try {
-      const mcpTools = await createMcpTools(client, serverName)
-      tools.push(...mcpTools)
-    } catch (err) {
-      console.error(`Error loading tools from MCP server ${serverName}:`, err)
+  if (enableMcp) {
+    await mcpManager.cleanup()
+    await mcpManager.initializeAll(cwd)
+    const mcpClients = mcpManager.getClients()
+    for (const [serverName, client] of mcpClients.entries()) {
+      try {
+        const mcpTools = await createMcpTools(client, serverName)
+        tools.push(...mcpTools)
+      } catch (err) {
+        console.error(`Error loading tools from MCP server ${serverName}:`, err)
+      }
     }
+  } else {
+    await mcpManager.cleanup()
   }
 
   const providerTools: ProviderTool[] = tools.map(t => ({
@@ -196,7 +385,7 @@ export async function runQuery(options: QueryOptions): Promise<{
     .replace('{{MEMORY}}', memoryText)
 
   // Initialize Hooks
-  await hooksManager.loadHooks(cwd)
+  await hooksManager.loadHooks(enableHooks ? cwd : null)
   await hooksManager.triggerEvent('SessionStart', cwd, { model })
 
   // Build conversation history in provider-agnostic format
@@ -262,7 +451,10 @@ export async function runQuery(options: QueryOptions): Promise<{
     let hasToolCalls = false
 
     try {
-      const toolsForProvider = filterProviderToolsByAllowedTools(chatHistory, providerTools)
+      const toolsForProvider =
+        permissionMode === 'plan' && !planApproved
+          ? []
+          : filterProviderToolsByAllowedTools(chatHistory, providerTools)
       for await (const chunk of provider.streamChat({
         model,
         system: systemPrompt,
@@ -392,18 +584,26 @@ export async function runQuery(options: QueryOptions): Promise<{
         const desc = buildPermissionDescription({ toolName: tc.name, input: tc.input, cwd })
         const allowed = await toolContext.onPermissionRequest(tc.name, desc)
         if (allowed !== true) {
-          toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `Permission denied for tool "${tc.name}".`, is_error: true })
+          const why = lastPermissionReason ? `\nReason: ${lastPermissionReason}` : ''
+          const hint =
+            permissionMode === 'plan' && !planApproved
+              ? '\nHint: Use /plan approve after reviewing the plan.'
+              : permissionMode === 'auto'
+                ? '\nHint: Use /mode default for interactive approvals.'
+                : ''
+          toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `Permission denied for tool "${tc.name}".${why}${hint}`, is_error: true })
           activeTool = null
           continue
         }
 
         await hooksManager.triggerEvent('PreToolUse', cwd, { tool_name: tc.name, tool_input: tc.input })
         const result = await toolDef.execute(tc.input, toolContext)
-        await hooksManager.triggerEvent('PostToolUse', cwd, { tool_name: tc.name, tool_input: tc.input, result: result.content })
         activeTool = null
         
         const redacted = redactIfSecrets(result.content)
         const safeResultContent = redacted.redacted
+        const hookResult = safeResultContent.length > 5000 ? safeResultContent.slice(0, 5000) + '\n…' : safeResultContent
+        await hooksManager.triggerEvent('PostToolUse', cwd, { tool_name: tc.name, tool_input: tc.input, result: hookResult })
 
         onStreamChunk({
           type: 'tool_done',
@@ -818,7 +1018,11 @@ function findLastUserText(history: ChatMessage[]): string | null {
   for (let i = history.length - 1; i >= 0; i--) {
     const m = history[i]
     if (m.role !== 'user') continue
-    if (typeof m.content === 'string') return m.content
+    if (typeof m.content === 'string') {
+      const s = m.content
+      if (s.startsWith('[Tool Result:') || s.startsWith('[Tool:')) continue
+      return s
+    }
   }
   return null
 }

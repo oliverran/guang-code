@@ -11,10 +11,8 @@ export async function createMcpTools(client: Client, serverName: string): Promis
     const { tools } = await client.listTools()
     
     return tools.map(mcpTool => {
-      // Create a unique tool name by namespacing it with the server name
-      // e.g., 'sqlite_query' -> 'sqlite_query'
-      // We might need to handle naming collisions if multiple servers provide same tool
-      const toolName = `${serverName}_${mcpTool.name}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64)
+      const rawName = `mcp.${serverName}.${mcpTool.name}`
+      const toolName = rawName.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 64)
 
       return {
         name: toolName,

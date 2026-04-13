@@ -22,9 +22,14 @@ export type HooksSettings = Record<string, HookConfig[]>
 export class HooksManager {
   private hooks: HooksSettings = {}
 
-  async loadHooks(cwd: string): Promise<void> {
+  async loadHooks(cwd: string | null): Promise<void> {
+    if (!cwd) {
+      this.hooks = {}
+      return
+    }
     const hooksPath = path.join(cwd, '.guang', 'hooks.json')
     if (!fs.existsSync(hooksPath)) {
+      this.hooks = {}
       return
     }
 
@@ -32,6 +37,7 @@ export class HooksManager {
       const content = fs.readFileSync(hooksPath, 'utf-8')
       this.hooks = JSON.parse(content) as HooksSettings
     } catch (err) {
+      this.hooks = {}
       console.error('Failed to load hooks config:', err)
     }
   }

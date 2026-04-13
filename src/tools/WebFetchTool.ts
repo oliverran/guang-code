@@ -29,29 +29,50 @@ export const WebFetchTool: ToolDef = {
     const maxLen = (input.max_length as number | undefined) ?? 20000
 
     try {
-      const v = validateUrlString(url)
       const allowLocal = process.env.GC_ALLOW_LOCALHOST_WEBFETCH === '1'
-      if (!allowLocal && isLoopbackHost(v.hostname)) {
-        return { content: 'Blocked URL hostname (loopback) for safety.', isError: true }
-      }
-      const ips = await resolveHostIps(v.hostname)
-      if (!allowLocal) {
-        if (ips.some(ip => isPrivateOrLinkLocalIp(ip))) {
-          return { content: 'Blocked URL hostname (private/link-local) for safety.', isError: true }
+      const maxRedirects = 5
+      let current = validateUrlString(url).normalized
+      let response: Response | null = null
+
+      for (let hop = 0; hop <= maxRedirects; hop++) {
+        const v = validateUrlString(current)
+        if (!allowLocal && isLoopbackHost(v.hostname)) {
+          return { content: 'Blocked URL hostname (loopback) for safety.', isError: true }
         }
+        const ips = await resolveHostIps(v.hostname)
+        if (!allowLocal) {
+          if (ips.some(ip => isPrivateOrLinkLocalIp(ip))) {
+            return { content: 'Blocked URL hostname (private/link-local) for safety.', isError: true }
+          }
+        }
+
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 15000)
+        response = await fetch(v.normalized, {
+          signal: controller.signal,
+          redirect: 'manual',
+          headers: {
+            'User-Agent': 'Guang-Code/1.0',
+            Accept: 'text/html,text/plain,application/json,*/*',
+          },
+        })
+        clearTimeout(timeout)
+
+        if (response.status >= 300 && response.status < 400) {
+          const loc = response.headers.get('location')
+          if (!loc) {
+            return { content: `HTTP ${response.status} redirect without Location header for ${v.normalized}`, isError: true }
+          }
+          current = new URL(loc, v.url).toString()
+          continue
+        }
+
+        break
       }
 
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 15000)
-
-      const response = await fetch(v.normalized, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'Guang-Code/1.0',
-          Accept: 'text/html,text/plain,application/json,*/*',
-        },
-      })
-      clearTimeout(timeout)
+      if (!response) {
+        return { content: `Fetch failed: no response for ${url}`, isError: true }
+      }
 
       if (!response.ok) {
         return {
@@ -84,7 +105,7 @@ export const WebFetchTool: ToolDef = {
         content = content.slice(0, maxLen) + `\n\n... (truncated, ${content.length - maxLen} more chars)`
       }
 
-      return { content: `URL: ${v.normalized}\nContent-Type: ${contentType}\n\n${content}` }
+      return { content: `URL: ${current}\nContent-Type: ${contentType}\n\n${content}` }
     } catch (err: unknown) {
       const e = err as Error
       if (e.name === 'AbortError') {

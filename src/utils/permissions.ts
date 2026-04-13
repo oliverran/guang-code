@@ -6,6 +6,17 @@ import { isLoopbackHost, isPrivateOrLinkLocalIp, validateUrlString } from './web
 
 export type PermissionDecision = 'allow' | 'deny' | 'ask'
 
+export type PermissionDecisionResult = {
+  decision: PermissionDecision
+  reason?: string
+  rule?: PermissionRule
+}
+
+function isMcpToolName(toolName: string): boolean {
+  const t = (toolName ?? '').toLowerCase()
+  return t === 'mcp' || t.startsWith('mcp.') || t.startsWith('mcp:')
+}
+
 function normalizeForMatch(p: string): string {
   return p.replace(/\\/g, '/')
 }
@@ -100,32 +111,48 @@ export function decidePermission(opts: {
   toolName: string
   toolInput?: Record<string, unknown>
   cwd: string
-}): PermissionDecision {
-  const { permissionMode, rules, toolName, toolInput, cwd } = opts
+  planApproved?: boolean
+}): PermissionDecisionResult {
+  const { permissionMode, rules, toolName, toolInput, cwd, planApproved = false } = opts
   let decision: PermissionDecision = 'ask'
+  let reason: string | undefined
+  let matchedRule: PermissionRule | undefined
 
-  if (permissionMode === 'plan') {
-    if (toolName === 'Write' || toolName === 'Edit') return 'deny'
+  if (permissionMode === 'plan' && !planApproved) {
+    if (isMcpToolName(toolName)) {
+      return { decision: 'deny', reason: 'Plan mode (not approved) blocks MCP tools.' }
+    }
+    if (toolName === 'Write' || toolName === 'Edit') {
+      return { decision: 'deny', reason: 'Plan mode (not approved) blocks file writes/edits.' }
+    }
     if (toolName === 'Bash') {
       const cmd = toolInputCommand(toolName, toolInput)
-      if (cmd && isPlanWriteLikeBash(cmd)) return 'deny'
+      if (cmd && isPlanWriteLikeBash(cmd)) {
+        return { decision: 'deny', reason: 'Plan mode (not approved) blocks write-like shell commands.' }
+      }
     }
   }
 
   if (permissionMode === 'auto') {
-    if (toolName === 'Write' || toolName === 'Edit' || toolName === 'Task' || toolName === 'Mcp') {
+    if (isMcpToolName(toolName) || toolName === 'Write' || toolName === 'Edit' || toolName === 'Task') {
       decision = 'deny'
+      reason = 'Auto mode blocks this tool.'
     } else if (toolName === 'Bash') {
       const cmd = toolInputCommand(toolName, toolInput)
       decision = cmd && isAutoReadOnlyBash(cmd) ? 'allow' : 'deny'
+      reason = decision === 'allow'
+        ? 'Auto mode allows only a small allowlist of read-only shell commands.'
+        : 'Auto mode blocks this shell command.'
     } else if (toolName === 'WebFetch') {
       const host = toolInputDomain(toolName, toolInput)
       if (!host) decision = 'deny'
       else if (isLoopbackHost(host)) decision = 'deny'
       else if (isIpLiteral(host) && isPrivateOrLinkLocalIp(host)) decision = 'deny'
       else decision = isPreapprovedHost(host) ? 'allow' : 'deny'
+      if (decision === 'deny') reason = 'Auto mode blocks WebFetch unless the hostname is preapproved and not local/private.'
     } else {
       decision = 'allow'
+      reason = 'Auto mode allows this tool.'
     }
   }
 
@@ -165,10 +192,25 @@ export function decidePermission(opts: {
     if (rule.effect === 'allow') decision = 'allow'
     else if (rule.effect === 'deny') decision = 'deny'
     else decision = 'ask'
+    matchedRule = rule
   }
 
-  if (permissionMode === 'auto' && decision === 'ask') return 'deny'
-  return decision
+  if (matchedRule) {
+    const parts = [
+      matchedRule.tool ? `tool=${matchedRule.tool}` : null,
+      matchedRule.path ? `path=${matchedRule.path}` : null,
+      matchedRule.domain ? `domain=${matchedRule.domain}` : null,
+      matchedRule.command ? `command=${matchedRule.command}` : null,
+    ].filter(Boolean)
+    reason = matchedRule.description
+      ? `Matched rule (${matchedRule.effect}): ${matchedRule.description}`
+      : `Matched rule (${matchedRule.effect}): ${parts.join(' ')}`
+  }
+
+  if (permissionMode === 'auto' && decision === 'ask') {
+    return { decision: 'deny', reason: reason ?? 'Auto mode converts ask into deny.' , rule: matchedRule }
+  }
+  return { decision, reason, rule: matchedRule }
 }
 
 function isIpLiteral(hostname: string): boolean {

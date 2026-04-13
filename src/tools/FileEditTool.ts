@@ -4,7 +4,7 @@
 // ============================================================
 
 import { readFile, writeFile } from 'fs/promises'
-import { assertSafeLocalPath, resolveRealPathWithinCwd } from '../utils/pathSafety.js'
+import { assertSafeLocalPath, isProtectedProjectFile, resolveRealPathWithinCwd } from '../utils/pathSafety.js'
 import type { ToolDef, ToolContext, ToolResult } from '../types/index.js'
 
 export const FileEditTool: ToolDef = {
@@ -34,7 +34,7 @@ export const FileEditTool: ToolDef = {
     const oldString = input.old_string as string
     const newString = input.new_string as string
 
-    if (ctx.permissionMode === 'plan') {
+    if (ctx.permissionMode === 'plan' && !ctx.planApproved) {
       return {
         content: 'Plan mode active: file edits are not allowed until the plan is approved.',
         isError: true,
@@ -44,6 +44,9 @@ export const FileEditTool: ToolDef = {
     try {
       filePath = assertSafeLocalPath({ cwd: ctx.cwd, inputPath: String(input.file_path ?? '') })
       await resolveRealPathWithinCwd({ cwd: ctx.cwd, absPath: filePath })
+      if (isProtectedProjectFile({ cwd: ctx.cwd, absPath: filePath })) {
+        return { content: `Blocked edit to protected project file: ${filePath}`, isError: true }
+      }
       const raw = await readFile(filePath, 'utf-8')
 
       const occurrences = raw.split(oldString).length - 1

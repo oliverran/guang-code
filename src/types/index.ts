@@ -66,6 +66,7 @@ export type ToolResult = {
 export type ToolContext = {
   cwd: string
   permissionMode: PermissionMode
+  planApproved?: boolean
   onPermissionRequest: (toolName: string, description: string) => Promise<boolean | 'always_allow' | 'allow_once' | 'deny'>
   model?: string
   providerConfig?: GcConfig
@@ -115,6 +116,11 @@ export type PermissionRule = {
   description?: string
 }
 
+export type TrustedProjectConfig = {
+  mcp?: { hash: string }
+  hooks?: { hash: string }
+}
+
 /** Full config file shape */
 export type GcConfig = {
   version: 1
@@ -136,6 +142,7 @@ export type GcConfig = {
   memoryEnabled?: boolean
   /** Override memory base directory for memdir (advanced) */
   memoryDirectory?: string
+  trustedProjects?: Record<string, TrustedProjectConfig>
 }
 
 /** Runtime provider resolution result */
@@ -214,10 +221,14 @@ export type AppState = {
   outputTokens: number
   cwd: string
   sessionId: string
+  sessionCreatedAt: number
+  sessionTitle?: string
   pendingPermission: PendingPermission | null
   error: string | null
   spinnerText: string
   planApproved: boolean
+  pendingPlan?: string
+  pendingAutomatedPrompt?: { label: string; prompt: string }
 }
 
 export type PendingPermission = {
@@ -233,6 +244,9 @@ export type PendingPermission = {
 export type SlashCommand = {
   name: string
   description: string
+  usage?: string
+  examples?: string[]
+  noArgs?: boolean
   execute: (args: string, state: AppState, setState: SetState) => Promise<string | null>
 }
 

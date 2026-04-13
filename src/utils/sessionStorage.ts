@@ -11,6 +11,7 @@ const SESSIONS_DIR = join(homedir(), '.guang-code', 'sessions')
 
 export type SavedSession = {
   id: string
+  title?: string
   createdAt: number
   updatedAt: number
   cwd: string

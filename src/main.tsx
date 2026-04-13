@@ -11,7 +11,7 @@ import chalk from 'chalk'
 import figures from 'figures'
 import { App } from './components/App.js'
 import type { AppState } from './types/index.js'
-import { loadSession } from './utils/sessionStorage.js'
+import { listSessions, loadSession } from './utils/sessionStorage.js'
 import { loadConfig, CONFIG_PATH, migratePlaintextKeysIfNeeded } from './utils/config.js'
 
 // ── CLI setup ────────────────────────────────────────────────
@@ -56,6 +56,7 @@ const cwd = opts.cwd ? resolve(opts.cwd as string) : process.cwd()
 
 // ── Initial app state ─────────────────────────────────────────
 async function buildInitialState(): Promise<AppState> {
+  const now = Date.now()
   const base: AppState = {
     messages: [],
     isLoading: false,
@@ -66,6 +67,7 @@ async function buildInitialState(): Promise<AppState> {
     outputTokens: 0,
     cwd,
     sessionId: randomUUID(),
+    sessionCreatedAt: now,
     pendingPermission: null,
     error: null,
     spinnerText: '',
@@ -74,12 +76,29 @@ async function buildInitialState(): Promise<AppState> {
 
   // Resume previous session
   if (opts.resume) {
-    const saved = await loadSession(opts.resume as string)
+    const raw = String(opts.resume)
+    let targetId: string | null = raw
+    if (!/^[0-9a-fA-F-]{32,}$/.test(raw) || raw.length < 32) {
+      const sessions = await listSessions()
+      if (/^\d+$/.test(raw)) {
+        const idx = Number(raw)
+        const s = Number.isFinite(idx) ? sessions[idx - 1] : undefined
+        targetId = s?.id ?? null
+      } else {
+        const pref = raw.toLowerCase()
+        const s = sessions.find(x => x.id.toLowerCase().startsWith(pref))
+        targetId = s?.id ?? null
+      }
+    }
+
+    const saved = targetId ? await loadSession(targetId) : null
     if (saved) {
       console.log(`  ${chalk.cyan(figures.arrowLeft)}  Resuming session ${chalk.bold(saved.id.slice(0, 8))} (${saved.messages.length} messages)`)
       return {
         ...base,
         sessionId: saved.id,
+        sessionCreatedAt: saved.createdAt,
+        sessionTitle: saved.title,
         messages: saved.messages,
         inputTokens: saved.inputTokens,
         outputTokens: saved.outputTokens,

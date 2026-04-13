@@ -25,6 +25,14 @@ export function isPathWithin(baseDir: string, targetPath: string): boolean {
   return target.startsWith(base.endsWith(path.sep) ? base : base + path.sep)
 }
 
+export function isProtectedProjectFile(opts: { cwd: string; absPath: string }): boolean {
+  const rel = path.relative(opts.cwd, opts.absPath).replace(/\\/g, '/')
+  const top = rel.split('/')[0]
+  if (top === '.guang') return true
+  if (top === '.git') return true
+  return false
+}
+
 export function assertSafeLocalPath(opts: { cwd: string; inputPath: string; allowUnc?: boolean }): string {
   const abs = resolveAgainstCwd(opts.cwd, opts.inputPath)
   if (!opts.allowUnc && isUncPath(abs)) {
@@ -94,4 +102,3 @@ export function isSymlinkSync(p: string): boolean {
     return false
   }
 }
-

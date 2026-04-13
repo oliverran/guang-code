@@ -2,7 +2,7 @@
 //  Guang Code — Main REPL App Component
 // ============================================================
 
-import React, { useState, useCallback, useRef, useEffect } from 'react'
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { Box, Text, useInput, Spacer } from 'ink'
 import TextInput from 'ink-text-input'
 import figures from 'figures'
@@ -13,7 +13,7 @@ import { PermissionRequest } from './PermissionRequest.js'
 import { StatusBar } from './StatusBar.js'
 import { runQuery } from '../utils/QueryEngine.js'
 import { loadProjectInstructions } from '../utils/projectInstructions.js'
-import { findSlashCommand } from '../commands/slashCommands.js'
+import { findSlashCommand, getAllSlashCommands } from '../commands/slashCommands.js'
 import { saveSession } from '../utils/sessionStorage.js'
 import { randomUUID } from 'crypto'
 import { onSubagentEvent } from '../utils/subagents.js'
@@ -33,6 +33,10 @@ export function App({ initialState, apiKeyOverride }: Props) {
   const [historyIndex, setHistoryIndex] = useState(-1)
   const [streamingText, setStreamingText] = useState('')
   const [spinnerText, setSpinnerText] = useState('')
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [paletteQuery, setPaletteQuery] = useState('')
+  const [paletteIndex, setPaletteIndex] = useState(0)
+  const [tabCycle, setTabCycle] = useState<{ base: string; index: number }>({ base: '', index: 0 })
   const abortRef = useRef<AbortController | null>(null)
   const bgSeenRef = useRef<Set<string>>(new Set())
   const stateRef = useRef<AppState>(state)
@@ -43,7 +47,76 @@ export function App({ initialState, apiKeyOverride }: Props) {
     stateRef.current = state
   }, [state])
 
-  const runAutomatedPrompt = useCallback(async (promptText: string, label: string): Promise<boolean> => {
+  const allSlashCommands = useMemo(() => getAllSlashCommands(state.cwd), [state.cwd])
+
+  const paletteItems = useMemo(() => {
+    const q = paletteQuery.trim().toLowerCase()
+    const scored = allSlashCommands.map(c => {
+      const name = c.name.toLowerCase()
+      const desc = (c.description ?? '').toLowerCase()
+      let score = 0
+      if (!q) score = 1
+      else if (name === q) score = 100
+      else if (name.startsWith(q)) score = 60 - (name.length - q.length)
+      else if (name.includes(q)) score = 40 - Math.max(0, name.indexOf(q))
+      else if (desc.includes(q)) score = 20 - Math.max(0, desc.indexOf(q))
+      return { name: c.name, description: c.description, usage: c.usage, examples: c.examples, noArgs: c.noArgs, score }
+    })
+    return scored
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+      .slice(0, 12)
+  }, [allSlashCommands, paletteQuery])
+
+  const slashSuggestions = useMemo(() => {
+    if (state.isLoading || paletteOpen) return []
+    const v = inputValue
+    if (!v.startsWith('/')) return []
+    if (v.includes(' ')) return []
+    const q = v.slice(1).trim().toLowerCase()
+    const scored = allSlashCommands.map(c => {
+      const name = c.name.toLowerCase()
+      const desc = (c.description ?? '').toLowerCase()
+      let score = 0
+      if (!q) score = 1
+      else if (name === q) score = 100
+      else if (name.startsWith(q)) score = 60 - (name.length - q.length)
+      else if (name.includes(q)) score = 40 - Math.max(0, name.indexOf(q))
+      else if (desc.includes(q)) score = 20 - Math.max(0, desc.indexOf(q))
+      return { name: c.name, description: c.description, usage: c.usage, examples: c.examples, noArgs: c.noArgs, score }
+    })
+    return scored
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+      .slice(0, 5)
+  }, [allSlashCommands, inputValue, paletteOpen, state.isLoading])
+
+  const activeSlashHelp = useMemo(() => {
+    const v = inputValue
+    if (!v.startsWith('/')) return null
+    const token = v.slice(1).split(/\s+/)[0]?.trim().toLowerCase()
+    if (!token) return null
+    const exact = allSlashCommands.find(c => c.name.toLowerCase() === token)
+    const best = exact ?? (slashSuggestions.length > 0 ? allSlashCommands.find(c => c.name === slashSuggestions[0]!.name) : undefined)
+    if (!best) return null
+    const usage = best.usage ? best.usage : `/${best.name}${best.noArgs ? '' : ' …'}`
+    const examples = best.examples ?? []
+    return { name: best.name, description: best.description, usage, examples }
+  }, [allSlashCommands, inputValue, slashSuggestions])
+
+  useEffect(() => {
+    const v = inputValue
+    if (!v.startsWith('/') || v.includes(' ')) {
+      if (tabCycle.base) setTabCycle({ base: '', index: 0 })
+      return
+    }
+    const base = v.slice(1)
+    if (tabCycle.base && tabCycle.base !== base) {
+      setTabCycle({ base: '', index: 0 })
+    }
+  }, [inputValue, tabCycle.base])
+
+  const runAutomatedPrompt = useCallback(async (promptText: string, label: string, kind: 'cron' | 'command'): Promise<boolean> => {
     const cur = stateRef.current
     if (cur.isLoading || cur.pendingPermission) return false
     let hadError = false
@@ -51,7 +124,7 @@ export function App({ initialState, apiKeyOverride }: Props) {
     const userMsg: SessionMessage = {
       id: randomUUID(),
       role: 'user',
-      content: `[Scheduled Task: ${label}]\n${promptText}`,
+      content: kind === 'cron' ? `[Scheduled Task: ${label}]\n${promptText}` : `[Automated: ${label}]\n${promptText}`,
       timestamp: Date.now(),
     }
 
@@ -68,6 +141,7 @@ export function App({ initialState, apiKeyOverride }: Props) {
         model: cur.model,
         cwd: cur.cwd,
         permissionMode: cur.permissionMode,
+        planApproved: cur.planApproved,
         providerConfig: cur.providerConfig,
         apiKeyOverride,
         signal: abort.signal,
@@ -105,6 +179,10 @@ export function App({ initialState, apiKeyOverride }: Props) {
 
       setState(prev => {
         const combined = [...prev.messages, ...newMsgs]
+        const lastAssistant = [...newMsgs].reverse().find(m => m.role === 'assistant' && !m.toolUseId && typeof m.content === 'string') as any
+        const pendingPlan = prev.permissionMode === 'plan' && !prev.planApproved
+          ? (typeof lastAssistant?.content === 'string' ? String(lastAssistant.content) : prev.pendingPlan)
+          : prev.pendingPlan
         const updated: AppState = {
           ...prev,
           messages: combined,
@@ -113,10 +191,12 @@ export function App({ initialState, apiKeyOverride }: Props) {
           outputTokens: prev.outputTokens + outputTokens,
           pendingPermission: null,
           spinnerText: '',
+          pendingPlan,
         }
         saveSession({
           id: prev.sessionId,
-          createdAt: Date.now(),
+          title: prev.sessionTitle,
+          createdAt: prev.sessionCreatedAt,
           updatedAt: Date.now(),
           cwd: prev.cwd,
           model: prev.model,
@@ -141,6 +221,16 @@ export function App({ initialState, apiKeyOverride }: Props) {
     setSpinnerText('')
   }, [apiKeyOverride])
 
+  useEffect(() => {
+    const cur = stateRef.current
+    const pending = cur.pendingAutomatedPrompt
+    if (!pending) return
+    if (cur.isLoading || cur.pendingPermission) return
+
+    setState(prev => ({ ...prev, pendingAutomatedPrompt: undefined }))
+    runAutomatedPrompt(pending.prompt, pending.label, 'command').catch(() => {})
+  }, [state.pendingAutomatedPrompt, runAutomatedPrompt])
+
   const processCronQueue = useCallback(async () => {
     if (cronProcessingRef.current) return
     cronProcessingRef.current = true
@@ -151,7 +241,7 @@ export function App({ initialState, apiKeyOverride }: Props) {
         const next = cronQueueRef.current.shift()
         if (!next) return
         const label = `${next.task.id}@${new Date(next.bucket).toISOString().slice(0, 16)}`
-        const ok = await runAutomatedPrompt(next.task.prompt, label)
+        const ok = await runAutomatedPrompt(next.task.prompt, label, 'cron')
         finalizeProjectCronRun(cur.cwd, { task: next.task, bucket: next.bucket }, ok)
       }
     } finally {
@@ -272,7 +362,7 @@ export function App({ initialState, apiKeyOverride }: Props) {
   }, [])
 
   // ── Keyboard input ─────────────────────────────────────────
-  useInput((input: string, key: { ctrl: boolean; upArrow: boolean; downArrow: boolean }) => {
+  useInput((input: string, key: any) => {
     if (key.ctrl && input === 'c') {
       if (state.isLoading && abortRef.current) {
         abortRef.current.abort()
@@ -283,6 +373,49 @@ export function App({ initialState, apiKeyOverride }: Props) {
       return
     }
     if (key.ctrl && input === 'd') process.exit(0)
+
+    if (key.ctrl && input === 'p') {
+      if (state.isLoading || state.pendingPermission) return
+      setPaletteOpen(prev => !prev)
+      setPaletteQuery('')
+      setPaletteIndex(0)
+      return
+    }
+
+    if (paletteOpen) {
+      if (key.escape) {
+        setPaletteOpen(false)
+        setPaletteQuery('')
+        setPaletteIndex(0)
+        return
+      }
+      if (key.upArrow) {
+        setPaletteIndex(i => Math.max(0, i - 1))
+        return
+      }
+      if (key.downArrow) {
+        setPaletteIndex(i => Math.min(Math.max(0, paletteItems.length - 1), i + 1))
+        return
+      }
+    }
+
+    if (!paletteOpen && !state.isLoading && !state.pendingPermission) {
+      if (key.tab || input === '\t') {
+        const v = inputValue
+        if (!v.startsWith('/') || v.includes(' ')) return
+        if (slashSuggestions.length === 0) return
+        const base = v.slice(1)
+        const nextIndex =
+          tabCycle.base === base
+            ? (tabCycle.index + 1) % slashSuggestions.length
+            : 0
+        setTabCycle({ base, index: nextIndex })
+        const picked = slashSuggestions[nextIndex]
+        setInputValue(`/${picked.name} `)
+        setHistoryIndex(-1)
+        return
+      }
+    }
 
     if (key.upArrow && !state.isLoading) {
       const newIdx = Math.min(historyIndex + 1, inputHistory.length - 1)
@@ -296,6 +429,23 @@ export function App({ initialState, apiKeyOverride }: Props) {
       return
     }
   })
+
+  const executeSlashCommand = useCallback(async (name: string, args: string) => {
+    const cur = stateRef.current
+    const cmd = getAllSlashCommands(cur.cwd).find(c => c.name.toLowerCase() === name.toLowerCase())
+    if (!cmd) return
+    try {
+      const result = await cmd.execute(args, cur, setState)
+      if (result) {
+        setState(prev => ({
+          ...prev,
+          messages: [...prev.messages, { id: randomUUID(), role: 'assistant', content: result, timestamp: Date.now() }],
+        }))
+      }
+    } catch (err: unknown) {
+      setState(prev => ({ ...prev, error: (err as Error).message }))
+    }
+  }, [])
 
   // ── Submit ─────────────────────────────────────────────────
   const handleSubmit = useCallback(async (value: string) => {
@@ -358,6 +508,7 @@ export function App({ initialState, apiKeyOverride }: Props) {
         model: state.model,
         cwd: state.cwd,
         permissionMode: state.permissionMode,
+        planApproved: state.planApproved,
         providerConfig: state.providerConfig,
         apiKeyOverride,
         signal: abort.signal,
@@ -483,14 +634,79 @@ export function App({ initialState, apiKeyOverride }: Props) {
 
       <StatusBar state={state} />
 
+      {!state.isLoading && !paletteOpen && slashSuggestions.length > 0 && (
+        <Box paddingX={1} flexDirection="column" marginBottom={1}>
+          <Text color="gray" dimColor>Tab to complete · Ctrl+P command palette</Text>
+          {slashSuggestions.map((s, i) => (
+            <Text key={s.name} color={i === 0 ? 'cyan' : 'gray'} dimColor>{`/${s.name}  ${s.description ?? ''}`}</Text>
+          ))}
+        </Box>
+      )}
+
+      {paletteOpen && (
+        <Box paddingX={1} flexDirection="column" marginBottom={1} borderStyle="round" borderColor="cyan">
+          <Text color="cyan" bold>Command Palette</Text>
+          <Box>
+            <Text color="gray">{figures.pointer} </Text>
+            <TextInput
+              value={paletteQuery}
+              onChange={(v) => { setPaletteQuery(v); setPaletteIndex(0) }}
+              onSubmit={() => {
+                const picked = paletteItems[paletteIndex]
+                if (!picked) return
+                setPaletteOpen(false)
+                setPaletteQuery('')
+                setPaletteIndex(0)
+                if (picked.noArgs) {
+                  executeSlashCommand(picked.name, '')
+                } else {
+                  setInputValue(`/${picked.name} `)
+                }
+              }}
+              placeholder="Type to search commands…"
+            />
+          </Box>
+          <Box flexDirection="column" marginTop={1}>
+            {paletteItems.length === 0 ? (
+              <Text color="gray" dimColor>No matches</Text>
+            ) : (
+              paletteItems.map((it, idx) => (
+                <Text key={it.name} color={idx === paletteIndex ? 'black' : 'white'} backgroundColor={idx === paletteIndex ? 'cyan' : undefined}>
+                  {`/${it.name}  ${it.description ?? ''}`}
+                </Text>
+              ))
+            )}
+          </Box>
+          {paletteItems[paletteIndex] && (
+            <Box flexDirection="column" marginTop={1}>
+              <Text color="gray" dimColor>Usage: {(paletteItems[paletteIndex]!.usage ?? `/${paletteItems[paletteIndex]!.name}${paletteItems[paletteIndex]!.noArgs ? '' : ' …'}`)}</Text>
+              {(paletteItems[paletteIndex]!.examples ?? []).slice(0, 3).map((ex: string, i: number) => (
+                <Text key={i} color="gray" dimColor>{`Example: ${ex.trim()}`}</Text>
+              ))}
+            </Box>
+          )}
+          <Text color="gray" dimColor>
+            {paletteItems[paletteIndex]?.noArgs ? 'Enter to run · Esc to close · ↑↓ to navigate' : 'Enter to insert · Esc to close · ↑↓ to navigate'}
+          </Text>
+        </Box>
+      )}
+
       <Box paddingX={1}>
         <Text color="green" bold>{state.permissionMode === 'plan' ? '📋 ' : `${figures.pointer} `}</Text>
         {state.isLoading ? (
           <Text color="gray" dimColor>Press Ctrl+C to cancel…</Text>
         ) : (
-          <TextInput value={inputValue} onChange={setInputValue} onSubmit={handleSubmit} placeholder="Ask Guang Code anything…" />
+          !paletteOpen && <TextInput value={inputValue} onChange={setInputValue} onSubmit={handleSubmit} placeholder="Ask Guang Code anything…" />
         )}
       </Box>
+      {!state.isLoading && !paletteOpen && activeSlashHelp && inputValue.startsWith('/') && (
+        <Box paddingX={1} flexDirection="column">
+          <Text color="gray" dimColor>{`Usage: ${activeSlashHelp.usage}`}</Text>
+          {activeSlashHelp.examples.slice(0, 2).map((ex, i) => (
+            <Text key={i} color="gray" dimColor>{`Example: ${ex.trim()}`}</Text>
+          ))}
+        </Box>
+      )}
     </Box>
   )
 }

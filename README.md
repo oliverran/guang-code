@@ -27,6 +27,17 @@
 
 ## Changelog
 
+### v1.2.0 (Product Manager Edition)
+
+- **Interactive Command Palette**: Press `Ctrl+P` (or `/` then `/`) to open a searchable command palette with usage hints and autocomplete.
+- **Tab Autocompletion**: Type `/` and press `Tab` to cycle through matching slash commands.
+- **Alignment Pack & Document Ingestion**: Use `/align scan` to ingest project docs, then `/pack weekly` or `/pack feature <name>` to generate structured alignment materials.
+- **Decision Ledger**: Use `/decision add` to track project decisions, and `/decision extract` to auto-generate them from context.
+- **Change Impact Analysis**: Use `/impact <change>` to automatically analyze how a requirement change affects decisions, docs, and ACs.
+- **PM Templates**: Use `/template prd`, `/template story`, etc., to quickly generate standard product documents.
+- **Plan Mode Workflow**: Fully closed-loop `/plan start`, `/plan show`, `/plan approve` workflow to review and approve AI actions before execution.
+- **Session Management UX**: Improved `/sessions` list and `--resume` flag now supports short IDs and index numbers.
+
 ### v1.1.0 (2026-04-02)
 
 - Security & permissions: unified tool permission gate; `--auto` is now safe-by-default (denies unsafe tools unless rules allow)
@@ -226,9 +237,23 @@ guang "explain this codebase"      # send initial prompt
 guang -m gpt-4o                    # use a specific model
 guang --auto                       # auto-approve all tool calls
 guang --plan                       # read-only plan mode
-guang -r <sessionId>               # resume a previous session
+guang -r <sessionIdOrIndex>        # resume a previous session (supports short ID or index)
 guang --cwd /path/to/project       # set working directory
 ```
+
+---
+
+## Product Manager Workflows (New!)
+
+Guang Code now includes first-class support for Product Managers, transforming unstructured conversations into tracked project artifacts:
+
+1. **Interactive Command Palette (`Ctrl+P`)**: Press `Ctrl+P` or type `//` to browse and preview all available commands without memorizing them.
+2. **Alignment & Context (`/align`)**: Use `/align scan` to ingest project documents (PRDs, readmes, designs). The AI uses this context to automatically align its outputs.
+3. **Decision Ledger (`/decision`)**: Track key decisions with `/decision add <title> :: <summary>`. Ask the AI to auto-extract decisions from a chat with `/decision extract`.
+4. **Change Impact (`/impact <change>`)**: Before updating a requirement, use `/impact` to analyze how the change affects existing decisions, documents, and testing criteria.
+5. **Alignment Packs (`/pack weekly` or `/pack feature <name>`)**: Instantly generate structured status reports, risks, and next steps for team alignment.
+6. **Templates (`/template`)**: Instantly draft `/template prd`, `/template story`, or `/template release` with contextual awareness.
+7. **Safe Plan Mode (`/plan start`)**: Put the AI into a "drafting" mode. It will only plan its actions and write no code until you type `/plan approve`.
 
 ---
 
@@ -237,6 +262,15 @@ guang --cwd /path/to/project       # set working directory
 | Command | Description |
 |---|---|
 | `/help` | Show all commands and keyboard shortcuts |
+| `/sessions` | List recent saved sessions (with ID and index) |
+| `/session` | Manage current session (new, rename, export) |
+| `/plan` | Enter plan mode (start, show, approve, reset) |
+| `/align` | Ingest and align project context (scan, add, list, show, clear) |
+| `/decision` | Manage project decisions (add, list, link, extract, export) |
+| `/impact <change>` | Generate impact analysis against current context |
+| `/pack <weekly|feature>` | Generate alignment packs |
+| `/template <name>` | Quick generate templates (prd, story, release, competitor) |
+| `/trust` | Manage workspace trust (list, revoke) |
 | `/providers` | List all supported models and check which API keys are set |
 | `/keys <provider> <key>` | Save an API key (e.g. `/keys anthropic sk-ant-...`) |
 | `/model [name]` | Show model list or switch model |
@@ -263,6 +297,8 @@ guang --cwd /path/to/project       # set working directory
 | `Enter` | Send message |
 | `Ctrl+C` | Cancel current request |
 | `Ctrl+D` | Exit |
+| `Ctrl+P` | Open Command Palette (or `//`) |
+| `Tab` | Autocomplete command name |
 | `↑` / `↓` | Browse input history |
 
 ---
