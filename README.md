@@ -26,6 +26,13 @@
 ---
 
 ## Changelog
+### v1.2.1 (2026-04-13)
+
+- **Unified Suggestions Pipeline**: Autocomplete is now powered by pluggable providers (slash commands, input history, file paths, git branches).
+- **Better Autocomplete UX**: `Tab` cycles suggestions, `Shift+Tab` reverse-cycles. Suggestions show consistently in the footer when available.
+- **Path Completion (Safe by default)**: Relative-path completion stays inside the working directory (blocks `..` / absolute paths).
+- **Git Branch Completion**: Completes branches for `git checkout ...` / `git switch ...`.
+- **Interactive Stability**: Long messages are truncated for display; streaming output is bounded to keep Ink responsive.
 
 ### v1.2.0 (Product Manager Edition)
 
@@ -37,14 +44,6 @@
 - **PM Templates**: Use `/template prd`, `/template story`, etc., to quickly generate standard product documents.
 - **Plan Mode Workflow**: Fully closed-loop `/plan start`, `/plan show`, `/plan approve` workflow to review and approve AI actions before execution.
 - **Session Management UX**: Improved `/sessions` list and `--resume` flag now supports short IDs and index numbers.
-
-### v1.2.1 (2026-04-13)
-
-- **Unified Suggestions Pipeline**: Autocomplete is now powered by pluggable providers (slash commands, input history, file paths, git branches).
-- **Better Autocomplete UX**: `Tab` cycles suggestions, `Shift+Tab` reverse-cycles. Suggestions show consistently in the footer when available.
-- **Path Completion (Safe by default)**: Relative-path completion stays inside the working directory (blocks `..` / absolute paths).
-- **Git Branch Completion**: Completes branches for `git checkout ...` / `git switch ...`.
-- **Interactive Stability**: Long messages are truncated for display; streaming output is bounded to keep Ink responsive.
 
 ### v1.1.0 (2026-04-02)
 
