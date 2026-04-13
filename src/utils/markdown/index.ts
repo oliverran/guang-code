@@ -11,6 +11,10 @@ const renderer = new marked.Renderer()
 renderer.code = (token: any) => {
   const lang = token.lang || 'txt'
   const code = token.text
+  const lineCount = typeof code === 'string' ? (code.match(/\n/g)?.length ?? 0) + 1 : 0
+  if (typeof code === 'string' && (code.length > 12_000 || lineCount > 200)) {
+    return `\n${code}\n`
+  }
   try {
     const highlighted = highlight(code, { language: lang, ignoreIllegals: true })
     return `\n${highlighted}\n`

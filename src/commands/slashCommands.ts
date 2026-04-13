@@ -80,7 +80,8 @@ ${customCommandsSection}
 KEYBOARD SHORTCUTS:
   Enter               Send message
   Ctrl+P              Command palette
-  Tab                 Slash autocomplete (when input starts with "/")
+  Tab                 Autocomplete suggestions
+  Shift+Tab           Reverse-cycle suggestions
   Ctrl+C              Cancel current request
   Ctrl+D              Exit
   ↑ / ↓              Browse message history

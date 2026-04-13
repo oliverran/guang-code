@@ -6,6 +6,7 @@ import React from 'react'
 import { Box, Text } from 'ink'
 import figures from 'figures'
 import { renderMarkdown } from '../utils/markdown/index.js'
+import { truncateForDisplay } from '../utils/textDisplay.js'
 import type { SessionMessage } from '../types/index.js'
 
 type MessageProps = {
@@ -47,6 +48,7 @@ export function MessageView({ message, showTimestamp = false }: MessageProps) {
 
   // User messages
   if (message.role === 'user') {
+    const { text: displayText } = truncateForDisplay(content, { maxChars: 12_000, maxLines: 200 })
     return (
       <Box flexDirection="column" marginBottom={1}>
         <Box>
@@ -56,7 +58,7 @@ export function MessageView({ message, showTimestamp = false }: MessageProps) {
           )}
         </Box>
         <Box paddingLeft={2}>
-          <Text>{content}</Text>
+          <Text>{displayText}</Text>
         </Box>
       </Box>
     )
@@ -64,6 +66,7 @@ export function MessageView({ message, showTimestamp = false }: MessageProps) {
 
   // Assistant messages — render with basic markdown-like formatting
   if (message.role === 'assistant') {
+    const { text: displayText } = truncateForDisplay(content, { maxChars: 16_000, maxLines: 260 })
     return (
       <Box flexDirection="column" marginBottom={1}>
         <Box>
@@ -73,7 +76,7 @@ export function MessageView({ message, showTimestamp = false }: MessageProps) {
           )}
         </Box>
         <Box paddingLeft={2} flexDirection="column">
-          <AssistantText text={content} />
+          <AssistantText text={displayText} />
         </Box>
       </Box>
     )

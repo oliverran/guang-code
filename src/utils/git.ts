@@ -42,3 +42,12 @@ export async function getCurrentBranch(cwd: string): Promise<string> {
     return `Error: ${(err as Error).message}`
   }
 }
+
+export async function listGitBranches(cwd: string): Promise<string[]> {
+  try {
+    const { stdout } = await execAsync('git for-each-ref --format="%(refname:short)" refs/heads', { cwd })
+    return stdout.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+  } catch {
+    return []
+  }
+}
