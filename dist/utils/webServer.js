@@ -262,7 +262,7 @@ export class GuangWebServer extends EventEmitter {
         cwd,
         sessionId,
         permissionMode: cfg?.permissionMode || 'confirm_high_risk',
-        providerConfig: cfg?.providers || {},
+        providerConfig: cfg || undefined,
         apiKeyOverride: body.apiKey || undefined,
         onStreamChunk,
         onPermissionRequest: async (reqInfo) => {

@@ -1,0 +1,24 @@
+{
+  "name": "guang-code",
+  "version": "1.2.2",
+  "description": "Guang Code - Terminal AI Coding Assistant (Claude Code + DeepSeek Harness architecture)",
+  "main": "dist/main.js",
+  "bin": {
+    "gc": "./dist/main.js",
+    "guang": "./dist/main.js"
+  },
+  "scripts": {
+    "start": "node dist/main.js",
+    "dev": "node --watch dist/main.js",
+    "ui": "node scripts/start-ui.mjs",
+    "web": "node scripts/start-ui.mjs",
+    "webui": "node scripts/start-ui.mjs",
+    "ui:status": "node scripts/check-ui.mjs",
+    "ui:stop": "node scripts/stop-ui.mjs",
+    "install-global": "npm link"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

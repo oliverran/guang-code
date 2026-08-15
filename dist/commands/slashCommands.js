@@ -269,6 +269,9 @@ const providersCommand = {
     noArgs: true,
     async execute(_args, state, _setState) {
         const cfg = await loadConfig();
+        const providersBag = (cfg && cfg.providers && typeof cfg.providers === 'object')
+            ? cfg.providers
+            : (cfg && typeof cfg === 'object' ? cfg : {});
         // Show which providers have keys configured
         const providerIds = ['anthropic', 'openai', 'minimax', 'openai-compatible'];
         const keyStatus = providerIds.map(pid => {
@@ -278,7 +281,7 @@ const providersCommand = {
                 minimax: process.env.MINIMAX_API_KEY,
                 'openai-compatible': process.env.GC_API_KEY ?? process.env.OPENAI_API_KEY,
             }[pid];
-            const cfgKey = cfg.providers[pid]?.apiKey ?? cfg.providers[pid]?.apiKeyEnc;
+            const cfgKey = providersBag[pid]?.apiKey ?? providersBag[pid]?.apiKeyEnc;
             const hasKey = !!(envKey || cfgKey);
             return `  ${hasKey ? '✓' : '✗'} ${pid.padEnd(20)} ${hasKey ? '(key configured)' : '(no key — run /keys ' + pid + ' <KEY>)'}`;
         });
@@ -340,17 +343,23 @@ Keys are saved to ~/.guang-code/config.json`;
             return `Unknown provider "${pid}". Valid: ${validProviders.join(', ')}`;
         }
         await setProviderKey(pid, key);
-        // Update in-memory config
-        setState(prev => ({
-            ...prev,
-            providerConfig: {
-                ...prev.providerConfig,
-                providers: {
-                    ...prev.providerConfig.providers,
-                    [pid]: { ...prev.providerConfig.providers[pid], apiKey: key },
+        // Update in-memory config (defensive: tolerate prev.providerConfig being undefined or just a providers bag)
+        setState(prev => {
+            const pc = (prev.providerConfig && typeof prev.providerConfig === 'object') ? prev.providerConfig : {};
+            const currentProviders = (pc.providers && typeof pc.providers === 'object')
+                ? pc.providers
+                : (Object.keys(pc).length ? pc : {});
+            return {
+                ...prev,
+                providerConfig: {
+                    ...pc,
+                    providers: {
+                        ...currentProviders,
+                        [pid]: { ...(currentProviders[pid] || {}), apiKey: key },
+                    },
                 },
-            },
-        }));
+            };
+        });
         const masked = key.slice(0, 8) + '...' + key.slice(-4);
         return `API key saved for "${pid}": ${masked}\nConfig: ~/.guang-code/config.json`;
     },

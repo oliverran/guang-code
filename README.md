@@ -31,32 +31,64 @@
 
 ## 🚀 Quick Start (5 分钟跑起来)
 
-### 1) 启动 Terminal REPL
+### 0) 首次全局安装（可选，获得 `gc` / `guang` 命令）
 
 ```bash
 cd guang-code
-# 直接对话（默认模型读取 config.json 的 defaultModel）
-node . "帮我在当前项目初始化一个 tsconfig.json + ESLint"
-# 或启动交互模式
-node .
+npm link                # 一次性注册全局命令
+gc "重构这个文件"        # 任意目录直接调用
+guang                   # 交互 REPL
 ```
 
-### 2) 启动 Web UI（内置、零构建、支持直接对话）
-
-```
-/ui start [--port=5173] [--host=127.0.0.1] [--public]
-/ui status     # 查看运行状态
-/ui stop       # 停
-/ui open       # 打开浏览器到 http://127.0.0.1:5173
-别名： /web 、 /webui
-```
-
-或纯 Node：
+### 1) 启动 Terminal REPL（Ink TUI）
 
 ```bash
-node -e "import('./dist/utils/webServer.js').then(m=>m.startWebServer({port:5173}))"
-# Web UI 聊天界面：http://127.0.0.1:5173
+cd guang-code
+# 方式 A：npm script
+npm start
+# 方式 B：直接对话（一次性 prompt）
+node . "帮我在当前项目初始化一个 tsconfig.json + ESLint"
+# 方式 C：恢复上次会话
+node . -r 1
 ```
+
+### 2) 启动 Web UI — 6 种快速方式，按你最习惯的挑
+
+| # | 方式 | 命令 / 操作 | 适用场景 |
+|---|---|---|---|
+| ⭐A | **Windows 双击** | 双击 `start-ui.cmd` | 最省心，给非 CLI 用户 |
+| ⭐B | **npm script** | `npm run ui`（别名 `npm run web` / `npm run webui`） | 日常开发，在项目根目录运行 |
+|   C | **CLI 内 slash** | 进入 REPL 后输入 `/ui start` | 正在和终端对话时顺手开 |
+|   D | **Node 纯脚本** | `node scripts/start-ui.mjs [--port=N] [--public] [--no-open]` | CI / 脚本化调用 |
+|   E | **公网/局域网暴露** | `node scripts/start-ui.mjs --public` 或双击 `start-ui.cmd 5173 /pub` | 手机、内网其它机器访问 |
+|   F | **编程式** | `import {startWebServer} from './dist/utils/webServer.js'` | 你自己的 Node 服务嵌入 |
+
+**启动参数速查**：
+
+```bash
+node scripts/start-ui.mjs --port=8080          # 改端口
+node scripts/start-ui.mjs --public             # 监听 0.0.0.0（允许 LAN）
+node scripts/start-ui.mjs --no-open            # 启动后不开浏览器
+start-ui.cmd 8080 /pub                         # Windows cmd 参数形式：port + /pub + /no-open
+```
+
+**配套控制命令**：
+
+```
+# REPL 内：
+/ui status     # 查看运行状态 / UI URL
+/ui stop       # 停止
+/ui open       # 打开浏览器到 http://127.0.0.1:5173
+# 别名： /web 、 /webui
+
+# 独立脚本（不进 REPL）：
+npm run ui:status       # 等价 node scripts/check-ui.mjs
+npm run ui:stop         # 等价 node scripts/stop-ui.mjs
+check-ui.cmd / stop-ui.cmd   # Windows 双击版
+```
+
+> 底层脚本：[scripts/start-ui.mjs](file:///c:/Users/olive/guang-code/scripts/start-ui.mjs) · [check-ui.mjs](file:///c:/Users/olive/guang-code/scripts/check-ui.mjs) · [stop-ui.mjs](file:///c:/Users/olive/guang-code/scripts/stop-ui.mjs)
+> 双击脚本：[start-ui.cmd](file:///c:/Users/olive/guang-code/start-ui.cmd) · [check-ui.cmd](file:///c:/Users/olive/guang-code/check-ui.cmd) · [stop-ui.cmd](file:///c:/Users/olive/guang-code/stop-ui.cmd)
 
 Web UI 功能：
 - 💬 **Chat**：SSE token-by-token 流式对话；切换 / 新建 Session；tool call 折叠卡片；Event log。
@@ -311,6 +343,32 @@ Built-in 9 个监听器（QueryEngine.ensurePipelineDefaultListeners 自动注�
 ---
 
 ## 🚦 Changelog
+
+### v2.1.0（稳定性与可运维性补丁 · 2026-08-15）
+
+本版本全部内容聚焦"让 guang-code 在 Windows 企业环境/沙箱/杀毒保护下也能**零配置跑起来不崩**"，没有改对外 API，升级即装即用。
+
+#### 🔥 Bug 修复（三大崩溃点全链路闭环）
+
+| # | 崩溃场景 | 修复策略 | 代码 |
+|---|---|---|---|
+| B1 | `Cannot read properties of undefined (reading 'minimax')` <br>（`config.providers` 未定义时 7 个访问点裸访问） | **`normalizeProviders()` 归一层**：对 `undefined / null / 只含 providers bag / 完整 config` 四种入参全部归一化；resolveApiKey/migratePlaintextKeys/slashCommands×2 处全部走归一层；webServer providerConfig 语义修复只传一次完整 config；QueryEngine 兜底 `loadConfig()`。 | [providers/index.js](file:///c:/Users/olive/guang-code/dist/providers/index.js#L52-L93) · [utils/config.js](file:///c:/Users/olive/guang-code/dist/utils/config.js#L166-L239) · [QueryEngine.js](file:///c:/Users/olive/guang-code/dist/utils/QueryEngine.js#L180-L191) · [webServer.js](file:///c:/Users/olive/guang-code/dist/utils/webServer.js#L258-L275) · [slashCommands.js](file:///c:/Users/olive/guang-code/dist/commands/slashCommands.js#L270-L365) |
+| B2 | `EPERM mkdir ~/.guang-code/storage/json` <br>（Windows Defender / 组策略阻止 HOME 目录写入） | **StorageHub 韧性链**：<br>① JSON backend 三级目录 fallback `HOME → 项目 .guang-code/storage → tmpdir` + `write probe`（防 Windows mkdir 假成功）<br>② SQLite backend 同三级 fallback，`open()` 失败不抛错，`isAvailable=false` 让 hub 自动跳过<br>③ **新增 InMemoryStorageBackend** 作为最终兜底（所有磁盘后端都挂时不崩）<br>④ `StorageHub.openAll()` 对每个 backend 用 try/catch，失败自动切换 InMemory。 | [storage/index.js](file:///c:/Users/olive/guang-code/dist/utils/storage/index.js#L58-L165) · [storage/json.js](file:///c:/Users/olive/guang-code/dist/utils/storage/json.js#L15-L62) · [storage/sqlite.js](file:///c:/Users/olive/guang-code/dist/utils/storage/sqlite.js#L31-L96) · 新增 [storage/memory.js](file:///c:/Users/olive/guang-code/dist/utils/storage/memory.js) |
+| B3 | `EPERM open ...MEMORY.md.<pid>.<ts>.tmp` <br>（Legacy Markdown 记忆写 .tmp 文件被 AV 拦截） | **memdir.js 同源韧性链 + 原子写 fallback**：<br>① `resolveEffectiveMemoryBase()` 三级目录 fallback + probe + 项目级 cache<br>② `writeTextAtomic()` 两步 fallback：tmp rename 失败 → `openSync('w') + writeSync + fsyncSync` 直接写<br>③ `ensureDir()` 三步重试（对付间歇性 AV 拦截）<br>④ `removeMemory()` 统一走 `writeTextAtomic()`<br>⑤ `ensureMemoryIndexExists()` 模板写失败静默吞（reader 本就安全）。 | [utils/memdir.js](file:///c:/Users/olive/guang-code/dist/utils/memdir.js#L52-L77) · [writeTextAtomic](file:///c:/Users/olive/guang-code/dist/utils/memdir.js#L275-L322) · [ensureDir](file:///c:/Users/olive/guang-code/dist/utils/memdir.js#L125-L141) · [removeMemory](file:///c:/Users/olive/guang-code/dist/utils/memdir.js#L444-L468) |
+
+#### ✨ Web UI 快速启动生态（6 种方式 + 启停控制）
+
+新增：
+- `package.json`（根目录）npm scripts：`start / ui / web / webui / ui:status / ui:stop`，bin 注册 `gc` / `guang` 全局命令。
+- `scripts/start-ui.mjs`：零依赖启动器，`--port=N --public --no-open`，**新增进程级 `uncaughtException/unhandledRejection` 兜底监听器**（非致命错误只打日志不退出）。
+- `scripts/check-ui.mjs` / `scripts/stop-ui.mjs`：跨平台端口检测 + kill。
+- `start-ui.cmd / check-ui.cmd / stop-ui.cmd`：Windows 双击版，自动检测 Node、pause 提示。
+
+详见 README 上方 [🚀 Quick Start §2 启动 Web UI — 6 种快速方式](file:///c:/Users/olive/guang-code/README.md#L55-L92)。
+
+#### 📝 文档
+
+- `guang-code-summary.md`：完整设计思考文档——从 DSH 8 大 Capability Seam 如何落地 guang-code、Memory 五层全景、可复用的记忆系统设计 8 模式 + 7 维度 Checklist（见项目根目录）。
 
 ### v2.0.0（DSH 对齐 + P0/P2 能力大版本 · 2026-08）
 

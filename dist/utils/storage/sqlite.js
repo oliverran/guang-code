@@ -3,18 +3,16 @@
 // ============================================================
 //
 // If better-sqlite3 is not installed, the backend is still importable;
-// open() will throw a helpful error advising the user to run:
-//   npm install better-sqlite3
+// open() will NOT throw — it simply marks itself unavailable so the
+// Hub can fall back to JSON (or InMemory) automatically.
 //
-// This "graceful degradation" keeps the JSON backend usable on every
-// platform (especially Windows ARM / older libc combos) while exposing
-// SQLite for users who need high-write domains (e.g. session event
-// logs) later.
+// Directory creation uses the same 3-tier fallback as the JSON backend
+// (home → project → tmpdir) to survive EPERM on Windows.
 
 import fs from 'node:fs'
 import path from 'node:path'
 import { StorageBackend } from './types.js'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 
 function lazyLoadBetterSqlite() {
   try {
@@ -31,23 +29,32 @@ function lazyLoadBetterSqlite() {
 }
 
 export class SqliteStorageBackend extends StorageBackend {
+  #candidates
   #baseDir
   #Databases = null
   #handles = new Map() // domain.name -> { db, path, openedAt }
   #opened = false
+  #openFailed = false
 
   constructor(opts = {}) {
     super()
     const envOverride = process.env.GC_STORAGE_SQLITE_DIR
-    this.#baseDir = path.resolve(
+    const preferred = path.resolve(
       opts.baseDir ?? (envOverride && envOverride.trim() ? envOverride.trim() : path.join(homedir(), '.guang-code', 'storage', 'sqlite'))
     )
+    this.#candidates = [
+      preferred,
+      path.resolve(process.cwd(), '.guang-code', 'storage', 'sqlite'),
+      path.join(tmpdir(), `guang-code-${process.pid}-${Date.now().toString(36)}`, 'storage', 'sqlite'),
+    ]
+    this.#baseDir = preferred
   }
 
   get baseDir() { return this.#baseDir }
 
   get isAvailable() {
     // Check once per instance; cache nullability
+    if (this.#openFailed) return false
     if (this.#Databases !== undefined && this.#Databases !== null) return true
     this.#Databases = lazyLoadBetterSqlite()
     return !!this.#Databases
@@ -56,14 +63,36 @@ export class SqliteStorageBackend extends StorageBackend {
   async open() {
     if (this.#opened) return
     if (!this.isAvailable) {
-      throw new Error(
-        '[storage-sqlite] native module "better-sqlite3" is not installed. ' +
-        'Install it with:  npm install better-sqlite3   ' +
-        'or switch memory.backend to "json" (default) in config.'
-      )
+      // Don't throw — caller will fall back to JSON/InMemory. Just silently skip.
+      this.#openFailed = true
+      return
     }
-    fs.mkdirSync(this.#baseDir, { recursive: true })
-    this.#opened = true
+    let lastErr = null
+    for (const cand of this.#candidates) {
+      try {
+        fs.mkdirSync(cand, { recursive: true })
+        const probe = path.join(cand, `.probe-${process.pid}-${Date.now().toString(36)}.tmp`)
+        fs.writeFileSync(probe, 'ok', 'utf-8')
+        fs.unlinkSync(probe)
+        this.#baseDir = cand
+        if (cand !== this.#candidates[0]) {
+          // eslint-disable-next-line no-console
+          console.warn(`  ⚠️  [storage-sqlite] Home dir unwritable — using fallback directory:
+      ${cand}\n`)
+        }
+        this.#opened = true
+        return
+      } catch (e) {
+        lastErr = e
+      }
+    }
+    // All candidates failed — mark unavailable so Hub falls back
+    this.#openFailed = true
+    this.#Databases = null
+    if (lastErr && (lastErr.code === 'EPERM' || lastErr.code === 'EACCES')) {
+      // eslint-disable-next-line no-console
+      console.warn(`  ⚠️  [storage-sqlite] Cannot create storage dir (${lastErr.code}); SQLite backend disabled for this session.\n`)
+    }
   }
 
   async close() {

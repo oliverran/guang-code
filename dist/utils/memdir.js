@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { homedir } from 'os';
+import { homedir, tmpdir } from 'os';
 import { createHash, randomUUID } from 'crypto';
 import { findSecrets, hasSecrets } from './secretScanner.js';
 export const ENTRYPOINT_NAME = 'MEMORY.md';
@@ -16,6 +16,66 @@ export const MEMORY_FRONTMATTER_EXAMPLE = [
     '---',
     '',
 ];
+// ── Resilient root dir helpers ------------------------------------------------
+// Cache resolved "effective" base dir per project so we don't probe every call.
+const _effectiveBaseCache = new Map(); // cacheKey(override + cwd-hash) -> { baseDir, usedFallback }
+let _fallbackWarned = false;
+
+function probeWritable(dir) {
+    try {
+        fs.mkdirSync(dir, { recursive: true });
+        const probe = path.join(dir, `.gc-probe-${process.pid}-${Date.now().toString(36)}.tmp`);
+        fs.writeFileSync(probe, 'ok', 'utf-8');
+        fs.unlinkSync(probe);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+
+function memoryBaseCandidates(override) {
+    const envOvr = process.env.GC_MEMORY_DIR_OVERRIDE;
+    const explicit = (override && override.trim()) ? override.trim() : (envOvr && envOvr.trim()) ? envOvr.trim() : null;
+    const candidates = [];
+    if (explicit) {
+        candidates.push(path.resolve(explicit));
+    }
+    else {
+        candidates.push(path.join(homedir(), '.guang-code', 'memory'));
+        candidates.push(path.resolve(process.cwd(), '.guang-code', 'memory'));
+        candidates.push(path.join(tmpdir(), `guang-code-mem-${process.pid}-${Date.now().toString(36)}`));
+    }
+    return candidates;
+}
+
+function resolveEffectiveMemoryBase(override, projectKeyHint) {
+    const cacheKey = `${override || ''}|${projectKeyHint || ''}|${process.env.GC_MEMORY_DIR_OVERRIDE || ''}`;
+    if (_effectiveBaseCache.has(cacheKey)) return _effectiveBaseCache.get(cacheKey);
+    const cands = memoryBaseCandidates(override);
+    let chosen = cands[0];
+    let fallback = false;
+    for (const cand of cands) {
+        if (probeWritable(cand)) {
+            chosen = cand;
+            fallback = (cand !== cands[0]);
+            break;
+        }
+    }
+    if (fallback && !_fallbackWarned) {
+        _fallbackWarned = true;
+        // eslint-disable-next-line no-console
+        console.warn(
+            `  ⚠️  [memdir] HOME memory dir unwritable — fallback to:\n` +
+            `      ${chosen}\n` +
+            `    To silence this warning: set env GC_MEMORY_DIR_OVERRIDE to a writable path.\n`
+        );
+    }
+    const result = { baseDir: chosen, usedFallback: fallback };
+    _effectiveBaseCache.set(cacheKey, result);
+    return result;
+}
+
 function getAncestors(startDir) {
     const out = [];
     let cur = path.resolve(startDir);
@@ -51,18 +111,33 @@ export function isAutoMemoryEnabled(opts) {
     return true;
 }
 function resolveMemoryBaseDir(override) {
-    const env = process.env.GC_MEMORY_DIR_OVERRIDE;
-    const base = (override && override.trim()) ? override.trim() : (env && env.trim()) ? env.trim() : path.join(homedir(), '.guang-code', 'memory');
-    return path.resolve(base);
+    const { baseDir } = resolveEffectiveMemoryBase(override, 'default');
+    return baseDir;
 }
 export function getProjectMemoryDir(cwd, opts) {
     const root = findGitRoot(cwd) ?? path.resolve(cwd);
     const key = sanitizeKey(root);
-    const base = resolveMemoryBaseDir(opts?.baseDir);
-    return path.join(base, 'projects', key, 'memory');
+    // Use the same candidate resolution — pass a stable per-project cache key so probe runs once
+    // per project regardless of how many times we call.
+    const { baseDir } = resolveEffectiveMemoryBase(opts?.baseDir, key);
+    return path.join(baseDir, 'projects', key, 'memory');
 }
 function ensureDir(dir) {
-    fs.mkdirSync(dir, { recursive: true });
+    try {
+        fs.mkdirSync(dir, { recursive: true });
+    }
+    catch (e) {
+        // mkdir EPERM on Windows is common (antivirus/Defender). Try again with a tiny delay
+        // then rethrow only if *parent* also fails (total unavailability).
+        try { fs.mkdirSync(dir, { recursive: true }); }
+        catch {
+            const parent = path.dirname(dir);
+            try { fs.mkdirSync(parent, { recursive: true }); }
+            catch { /* parent also no good — fall through, rethrow original */ throw e; }
+            try { fs.mkdirSync(dir, { recursive: true }); }
+            catch { throw e; }
+        }
+    }
 }
 function safeRead(filePath) {
     try {
@@ -199,27 +274,51 @@ function readMemoryMetadata(filePath) {
 }
 function writeTextAtomic(filePath, content) {
     ensureDir(path.dirname(filePath));
-    const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-    fs.writeFileSync(tmp, content, 'utf-8');
-    try {
-        fs.renameSync(tmp, filePath);
-    }
-    catch (err) {
-        const e = err;
-        if (e.code === 'EEXIST' || e.code === 'EPERM') {
+    const attempts = [
+        () => {
+            const tmp = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+            fs.writeFileSync(tmp, content, 'utf-8');
             try {
-                fs.unlinkSync(filePath);
+                fs.renameSync(tmp, filePath);
             }
-            catch { }
-            fs.renameSync(tmp, filePath);
-            return;
-        }
-        try {
-            fs.unlinkSync(tmp);
-        }
-        catch { }
-        throw err;
+            catch (err) {
+                const e = err;
+                if (e.code === 'EEXIST' || e.code === 'EPERM') {
+                    try { fs.unlinkSync(filePath); }
+                    catch { }
+                    try { fs.renameSync(tmp, filePath); return; }
+                    catch {
+                        try { fs.unlinkSync(tmp); }
+                        catch { }
+                        throw err;
+                    }
+                }
+                try { fs.unlinkSync(tmp); }
+                catch { }
+                throw err;
+            }
+        },
+        // Fallback write: atomic rename fails (EPERM on Windows Defender / antivirus) →
+        // fall back to direct write + fsync. Less atomic but avoids the whole save failing.
+        () => {
+            const fd = fs.openSync(filePath, 'w');
+            try {
+                fs.writeSync(fd, content, 0, 'utf-8');
+                try { fs.fsyncSync(fd); }
+                catch { /* best effort */ }
+            }
+            finally {
+                try { fs.closeSync(fd); }
+                catch { }
+            }
+        },
+    ];
+    let lastErr;
+    for (const att of attempts) {
+        try { att(); return; }
+        catch (e) { lastErr = e; }
     }
+    throw lastErr ?? new Error(`writeTextAtomic failed: ${filePath}`);
 }
 export function ensureMemoryDirExists(cwd, opts) {
     const dir = getProjectMemoryDir(cwd, { baseDir: opts?.baseDir });
@@ -227,6 +326,8 @@ export function ensureMemoryDirExists(cwd, opts) {
         ensureDir(dir);
     }
     catch {
+        // ensureDir already retries; if it still fails, caller should tolerate
+        // (reading functions return empty, addMemory will throw user-visible msg)
     }
     return dir;
 }
@@ -238,7 +339,9 @@ export function ensureMemoryIndexExists(cwd, opts) {
             '\n' +
             'Add one line per topic:\n' +
             '- [Short title](topic-file.md) — one-line description\n';
-        writeTextAtomic(entrypoint, template);
+        try { writeTextAtomic(entrypoint, template); }
+        catch { /* silently ignore — index will just not exist until user writes,
+                  but any subsequent reads return empty as they already do via safeRead */ }
     }
     return { memoryDir: dir, entrypoint };
 }
@@ -355,7 +458,8 @@ export function removeMemory(cwd, id, opts) {
     const lines = raw.split('\n');
     const kept = lines.filter(l => !l.includes(`](${id})`));
     try {
-        fs.writeFileSync(entrypoint, kept.join('\n').trim() + '\n', 'utf-8');
+        // Use same atomic-attempted write as addMemory — avoids EPERM on Windows
+        writeTextAtomic(entrypoint, kept.join('\n').trim() + '\n');
         return { ok: true };
     }
     catch (err) {

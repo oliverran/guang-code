@@ -51,7 +51,14 @@ export const KNOWN_MODELS = [
  */
 export function createProvider(model, config, apiKeyOverride) {
     const providerId = inferProvider(model);
-    const apiKey = resolveApiKey(providerId, config, apiKeyOverride);
+    // ── Defensive normalize: tolerate callers that pass only `providers` instead of full config ──
+    const cfg = (config && typeof config === 'object') ? config : {};
+    const providers = cfg.providers && typeof cfg.providers === 'object'
+        ? cfg.providers
+        : (Object.keys(cfg).length ? cfg : {}); // if caller passed providers bag directly
+    const safeCfg = { ...cfg, providers };
+
+    const apiKey = resolveApiKey(providerId, safeCfg, apiKeyOverride);
     if (!apiKey) {
         throw new Error(`No API key found for provider "${providerId}".\n` +
             `Run: guang /keys ${providerId} YOUR_KEY\n` +
@@ -62,17 +69,17 @@ export function createProvider(model, config, apiKeyOverride) {
         case 'anthropic':
             return new AnthropicProvider(apiKey);
         case 'openai': {
-            const baseUrl = config.providers['openai']?.baseUrl ??
+            const baseUrl = providers['openai']?.baseUrl ??
                 process.env.OPENAI_BASE_URL;
             return new OpenAIProvider(apiKey, baseUrl ? { baseUrl } : undefined);
         }
         case 'minimax': {
-            const baseUrl = config.providers['minimax']?.baseUrl ??
+            const baseUrl = providers['minimax']?.baseUrl ??
                 process.env.MINIMAX_BASE_URL;
             return new MiniMaxProvider(apiKey, baseUrl);
         }
         case 'openai-compatible': {
-            const baseUrl = config.providers['openai-compatible']?.baseUrl ??
+            const baseUrl = providers['openai-compatible']?.baseUrl ??
                 process.env.GC_BASE_URL ??
                 process.env.OPENAI_BASE_URL;
             if (!baseUrl) {

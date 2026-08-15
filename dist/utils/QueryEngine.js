@@ -182,7 +182,13 @@ export async function runQuery(options) {
     // Create the right provider for this model
     let provider;
     try {
-        provider = createProvider(model, providerConfig, apiKeyOverride);
+        // ── Defensive: if caller didn't pass full config, load default ──
+        let effectiveProviderConfig = providerConfig;
+        if (!effectiveProviderConfig) {
+            try { effectiveProviderConfig = await loadConfig(); }
+            catch { /* keep undefined, createProvider will surface meaningful error */ }
+        }
+        provider = createProvider(model, effectiveProviderConfig, apiKeyOverride);
     }
     catch (err) {
         const e = err;

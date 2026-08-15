@@ -5,7 +5,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { StorageBackend } from './types.js'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 
 /**
  * JSON backend — single JSON file per domain, atomic writes.
@@ -13,6 +13,7 @@ import { homedir } from 'node:os'
  * which is the target for Memory domain initially.
  */
 export class JsonStorageBackend extends StorageBackend {
+  #candidates
   #baseDir
   #files = new Map() // domain.name -> { path, data, dirty, lastMtime }
   #opened = false
@@ -20,17 +21,44 @@ export class JsonStorageBackend extends StorageBackend {
   constructor(opts = {}) {
     super()
     const envOverride = process.env.GC_STORAGE_JSON_DIR
-    this.#baseDir = path.resolve(
+    const preferred = path.resolve(
       opts.baseDir ?? (envOverride && envOverride.trim() ? envOverride.trim() : path.join(homedir(), '.guang-code', 'storage', 'json'))
     )
+    // Candidates for fallback when the preferred dir is unwritable (EPERM, antivirus lock, sandbox…)
+    this.#candidates = [
+      preferred,
+      path.resolve(process.cwd(), '.guang-code', 'storage', 'json'),
+      path.join(tmpdir(), `guang-code-${process.pid}-${Date.now().toString(36)}`, 'storage', 'json'),
+    ]
+    this.#baseDir = preferred
   }
 
   get baseDir() { return this.#baseDir }
 
   async open() {
     if (this.#opened) return
-    fs.mkdirSync(this.#baseDir, { recursive: true })
-    this.#opened = true
+    let lastErr = null
+    for (const cand of this.#candidates) {
+      try {
+        fs.mkdirSync(cand, { recursive: true })
+        // Write probe — mkdir can succeed on Windows while writes still fail EPERM (antivirus/ Defender)
+        const probe = path.join(cand, `.probe-${process.pid}-${Date.now().toString(36)}.tmp`)
+        fs.writeFileSync(probe, 'ok', 'utf-8')
+        fs.unlinkSync(probe)
+        this.#baseDir = cand
+        if (cand !== this.#candidates[0]) {
+          // eslint-disable-next-line no-console
+          console.warn(`  ⚠️  [storage-json] Home dir unwritable — using fallback directory:
+      ${cand}
+    To silence this warning, set env GC_STORAGE_JSON_DIR or fix ~/.guang-code permissions.\n`)
+        }
+        this.#opened = true
+        return
+      } catch (e) {
+        lastErr = e
+      }
+    }
+    throw lastErr ?? new Error('[storage-json] No writable storage directory candidates found')
   }
 
   async close() {
@@ -228,8 +256,9 @@ export class JsonStorageBackend extends StorageBackend {
       },
     }
 
+    let result
     try {
-      await callback(tx)
+      result = await callback(tx)
       // successful — flush once
       if (state.dirty) this.#flushOne(state)
       committed = true
@@ -241,6 +270,7 @@ export class JsonStorageBackend extends StorageBackend {
         } catch {}
       }
     }
+    return result
   }
 
   async getGlobal(domain) {

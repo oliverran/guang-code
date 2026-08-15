@@ -163,6 +163,21 @@ export function inferProvider(model) {
         return 'minimax';
     return 'openai-compatible';
 }
+// ── Helpers ───────────────────────────────────────────────────
+// Normalize a possibly-ambiguous `config` argument so that
+// .providers always exists. Accepts:
+//   - undefined / null / false-y -> { providers: {} }
+//   - a full config { providers: {...} } -> self (with providers fallback)
+//   - a providers bag directly { anthropic:{...}, minimax:{...} } -> wrapped
+function normalizeProviders(cfg) {
+    if (!cfg || typeof cfg !== 'object') return { providers: {} };
+    if (cfg.providers && typeof cfg.providers === 'object') {
+        return { ...cfg, providers: cfg.providers };
+    }
+    // Looks like a raw providers bag (caller misnamed the variable)
+    return { ...cfg, providers: cfg };
+}
+
 /**
  * Resolve API key for a provider. Priority:
  * 1. env var (ANTHROPIC_API_KEY / OPENAI_API_KEY / MINIMAX_API_KEY / GC_API_KEY)
@@ -181,8 +196,9 @@ export function resolveApiKey(providerId, config, envOverride) {
     };
     if (envMap[providerId])
         return envMap[providerId];
-    // 3. config file
-    const pcfg = config.providers[providerId];
+    // 3. config file (defensive normalize)
+    const safe = normalizeProviders(config);
+    const pcfg = safe.providers[providerId];
     if (!pcfg)
         return '';
     if (pcfg.apiKey)
@@ -201,8 +217,9 @@ export function resolveApiKey(providerId, config, envOverride) {
 export async function migratePlaintextKeysIfNeeded(config) {
     if (preferredSecretStore() !== 'windows-dpapi')
         return config;
+    const safe = normalizeProviders(config);
     let changed = false;
-    const next = { ...config, providers: { ...config.providers } };
+    const next = { ...safe, providers: { ...safe.providers } };
     for (const pid of Object.keys(next.providers)) {
         const pcfg = next.providers[pid];
         if (!pcfg)
