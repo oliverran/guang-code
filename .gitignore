@@ -1,0 +1,57 @@
+# Node / build
+node_modules
+dist-dev
+build
+.cache
+.vite
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local state / secrets (NEVER commit)
+.guang-code
+.guang
+~/.guang-code/*
+!~/.guang-code/skills
+!~/.guang-code/plugins/runtime
+*.state
+*.pem
+*.key
+.env
+.env.*
+
+# Project-local generated data
+guang-code-state/
+state/
+compaction/
+audit/
+plugins-out/
+
+# Temporary files
+__smoke_*.mjs
+__debug_*.mjs
+__start_web.mjs
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Temp / WIP (local only)
+__wip_local/
+__lsremote.txt
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.AppleDouble
+.LSOverride
+Icon?
+
+# Repo reference-only (optional ignore if too large)
+# deepseek-harness/   ← 保持提交，作为参考实现

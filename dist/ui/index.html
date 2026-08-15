@@ -1,0 +1,1174 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>guang-code · Web UI</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --bg-2: #0f172a;
+    --bg-3: #111c34;
+    --panel: #141e36;
+    --panel-2: #182543;
+    --border: #1f2d4e;
+    --border-2: #2a3b65;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --dim: #64748b;
+    --primary: #6366f1;
+    --primary-2: #4f46e5;
+    --primary-hover: #818cf8;
+    --success: #10b981;
+    --danger: #ef4444;
+    --warn: #f59e0b;
+    --info: #3b82f6;
+    --code: #0f172a;
+    --accent: #22d3ee;
+    --shadow: 0 8px 24px rgba(0,0,0,0.35);
+    --radius: 10px;
+    --radius-sm: 6px;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    color: var(--text);
+    background: radial-gradient(1200px 800px at 20% -10%, #1a2248 0%, transparent 60%),
+                radial-gradient(900px 600px at 110% 0%, #0c2d43 0%, transparent 55%),
+                var(--bg);
+    min-height: 100%;
+  }
+  a { color: var(--primary-hover); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  header.topbar {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 18px;
+    background: linear-gradient(180deg, rgba(15,23,42,.92), rgba(15,23,42,.78));
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(8px);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .logo {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: conic-gradient(from 210deg, var(--primary), var(--accent), #a78bfa, var(--primary));
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 6px 20px rgba(99,102,241,.3);
+  }
+  .brand h1 { margin: 0; font-size: 16px; letter-spacing: .2px; font-weight: 600; }
+  .brand .sub { color: var(--muted); font-size: 12px; }
+  .spacer { flex: 1; }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border-2); background: var(--panel);
+    padding: 4px 10px; border-radius: 999px; color: var(--muted); font-size: 12px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.ok { background: var(--success); box-shadow: 0 0 0 3px rgba(16,185,129,.15); }
+  .dot.warm { background: var(--warn); box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
+  .dot.bad { background: var(--danger); box-shadow: 0 0 0 3px rgba(239,68,68,.18); }
+  .btn {
+    appearance: none; -webkit-appearance: none;
+    border: 1px solid var(--border-2); background: var(--panel-2); color: var(--text);
+    padding: 6px 12px; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px;
+    transition: .15s ease; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:hover { border-color: var(--primary); color: #fff; }
+  .btn.primary { background: linear-gradient(180deg, var(--primary), var(--primary-2)); border-color: transparent; color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.success { background: linear-gradient(180deg, #059669, #047857); border-color: transparent; color: #fff; }
+  .btn.danger { background: linear-gradient(180deg, #dc2626, #b91c1c); border-color: transparent; color: #fff; }
+  .btn.ghost { background: transparent; }
+  .btn.sm { padding: 3px 8px; font-size: 12px; }
+  input[type="text"], input[type="search"], textarea, select {
+    width: 100%; appearance: none;
+    background: var(--bg-2); color: var(--text);
+    border: 1px solid var(--border-2); padding: 8px 10px; border-radius: var(--radius-sm);
+    font: inherit; outline: none;
+  }
+  input:focus, textarea:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,.18); }
+  textarea { resize: vertical; font-family: var(--mono); font-size: 12.5px; }
+  .shell {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    min-height: calc(100vh - 53px);
+  }
+  aside.tabs {
+    border-right: 1px solid var(--border); padding: 18px 12px;
+    display: flex; flex-direction: column; gap: 4px;
+    background: linear-gradient(180deg, rgba(17,28,52,.5), rgba(15,23,42,.2));
+  }
+  aside.tabs h3 { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; margin: 10px 6px 4px; font-weight: 600; }
+  .tab {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 10px; border-radius: var(--radius-sm); cursor: pointer;
+    color: var(--muted); border: 1px solid transparent; font-size: 13.5px;
+  }
+  .tab:hover { color: var(--text); background: rgba(148,163,184,.05); }
+  .tab.active {
+    color: #fff; background: linear-gradient(90deg, rgba(99,102,241,.22), rgba(99,102,241,.08));
+    border-color: rgba(99,102,241,.35);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.02);
+  }
+  .tab .ico { width: 18px; height: 18px; display: inline-grid; place-items: center; }
+  main.content {
+    padding: 22px 26px 60px; overflow: hidden;
+    display: flex; flex-direction: column; gap: 18px; max-width: 100%;
+  }
+  .page-head { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+  .page-head h2 { margin: 0; font-size: 20px; letter-spacing: .2px; font-weight: 600; }
+  .page-head .sub { color: var(--muted); }
+  .toolbar {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  }
+  .card {
+    border: 1px solid var(--border);
+    background: linear-gradient(180deg, rgba(20,30,54,.65), rgba(15,23,42,.55));
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .card-head {
+    display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .card-body { padding: 14px; }
+  .grid { display: grid; gap: 14px; }
+  .grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @media (max-width: 960px) {
+    .shell { grid-template-columns: 1fr; }
+    aside.tabs { padding: 10px; flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); }
+    aside.tabs h3 { display: none; }
+    .grid.cols-2, .grid.cols-3 { grid-template-columns: 1fr; }
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px; border-radius: 999px; font-size: 11.5px;
+    background: var(--panel-2); border: 1px solid var(--border-2); color: var(--muted);
+  }
+  .badge.primary { background: rgba(99,102,241,.15); border-color: rgba(99,102,241,.4); color: #c7d2fe; }
+  .badge.success { background: rgba(16,185,129,.12); border-color: rgba(16,185,129,.35); color: #6ee7b7; }
+  .badge.warn { background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.35); color: #fcd34d; }
+  .badge.danger { background: rgba(239,68,68,.12); border-color: rgba(239,68,68,.35); color: #fca5a5; }
+  .badge.info { background: rgba(59,130,246,.12); border-color: rgba(59,130,246,.35); color: #93c5fd; }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: rgba(255,255,255,0.01);
+  }
+  .row:hover { border-color: var(--border-2); background: rgba(148,163,184,.04); cursor: pointer; }
+  .row .t { font-weight: 600; }
+  .row .m { color: var(--muted); font-size: 12.5px; }
+  .row.selected { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+  .row .grow { flex: 1; min-width: 0; }
+  .messages { display: flex; flex-direction: column; gap: 14px; max-height: 60vh; overflow: auto; padding-right: 4px; }
+  .messages::-webkit-scrollbar { width: 8px; }
+  .messages::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 8px; }
+  .msg {
+    display: grid; grid-template-columns: 36px 1fr; gap: 12px; align-items: flex-start;
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px;
+    background: var(--panel);
+  }
+  .msg.user { background: linear-gradient(180deg, rgba(34,211,238,.08), rgba(20,30,54,1)); border-color: rgba(34,211,238,.3); }
+  .msg.assistant { border-color: rgba(99,102,241,.3); }
+  .msg.system { opacity: .85; }
+  .msg .avatar {
+    width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center;
+    background: var(--panel-2); border: 1px solid var(--border-2); font-weight: 700; font-size: 13px;
+  }
+  .msg.user .avatar { background: linear-gradient(180deg, #0891b2, #0e7490); color: #fff; border-color: transparent; }
+  .msg.assistant .avatar { background: linear-gradient(180deg, var(--primary), var(--primary-2)); color: #fff; border-color: transparent; }
+  .msg.system .avatar { background: linear-gradient(180deg, #475569, #334155); color: #fff; border-color: transparent; }
+  .msg .role { color: var(--muted); font-size: 12px; margin-bottom: 2px; }
+  .msg .body { overflow-wrap: anywhere; }
+  .msg .body p { margin: 0 0 8px; }
+  .msg .body pre {
+    background: var(--code); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; overflow: auto; font-family: var(--mono); font-size: 12.5px;
+  }
+  .msg .body code { font-family: var(--mono); background: #0a1429; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+  .toolcall {
+    border: 1px dashed rgba(99,102,241,.45); background: rgba(99,102,241,.06);
+    border-radius: 8px; padding: 8px 10px; margin: 6px 0;
+  }
+  .toolcall .title { color: #c7d2fe; font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+  .toolcall .meta { color: var(--muted); font-size: 12px; }
+  .toolcall pre { margin: 8px 0 0; }
+  .muted { color: var(--muted); }
+  .divider { height: 1px; background: var(--border); margin: 14px 0; }
+  .skill-card {
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 12px;
+    background: linear-gradient(180deg, rgba(20,30,54,.6), rgba(15,23,42,.5));
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .skill-card h4 { margin: 0; font-size: 14px; }
+  .mono { font-family: var(--mono); font-size: 12.5px; }
+  .kv { display: grid; grid-template-columns: 160px 1fr; gap: 6px 12px; font-size: 13px; }
+  .kv .k { color: var(--muted); }
+  details > summary { cursor: pointer; color: var(--primary-hover); }
+  .ping-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .ping-cell { padding: 12px; border: 1px solid var(--border); border-radius: var(--radius); text-align: center; }
+  .ping-cell .name { font-weight: 700; }
+  .ping-cell .state { margin-top: 6px; color: var(--muted); }
+  .ping-cell.ok { border-color: rgba(16,185,129,.35); background: rgba(16,185,129,.06); }
+  .ping-cell.bad { border-color: rgba(239,68,68,.35); background: rgba(239,68,68,.05); }
+  .small { font-size: 12px; }
+  details.tree summary { padding: 4px 0; font-weight: 600; color: var(--text); font-size: 13px; }
+  ul.tree { margin: 6px 0 10px 18px; padding: 0; color: var(--muted); }
+  details.trace { padding: 0; }
+  details.trace summary { padding: 6px 0; color: var(--muted); font-size: 12.5px; list-style: none; }
+  details.trace summary::before { content: '▸ '; }
+  details.trace[open] summary::before { content: '▾ '; }
+  .two-col { display: grid; grid-template-columns: 280px 1fr; gap: 16px; }
+  @media (max-width: 1024px) { .two-col { grid-template-columns: 1fr; } }
+  .session-empty { padding: 60px 0; text-align: center; color: var(--muted); }
+  .tag-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pending-actions { display: flex; gap: 8px; }
+  .code-block {
+    background: var(--code); color: #cbd5e1;
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; overflow: auto; font-family: var(--mono); font-size: 12px;
+  }
+  .empty-hint { color: var(--muted); text-align: center; padding: 20px; font-size: 13px; }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <h1>guang-code</h1>
+        <div class="sub">Terminal AI Coding Assistant · Web Console</div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <span class="status-pill"><span id="healthDot" class="dot warm"></span><span id="healthText">connecting…</span></span>
+    <button class="btn ghost sm" id="refreshBtn" title="Refresh">⟳ Refresh</button>
+    <a target="_blank" rel="noreferrer" class="btn sm" id="docsLink" href="https://github.com/deepseek-ai/deepseek-harness">DSH Docs</a>
+  </header>
+
+  <div class="shell">
+    <aside class="tabs" id="tabs">
+      <h3>Workspace</h3>
+      <div class="tab active" data-tab="chat"><span class="ico">💬</span> Chat</div>
+      <div class="tab" data-tab="sessions"><span class="ico">📂</span> Sessions</div>
+      <div class="tab" data-tab="skills"><span class="ico">🧠</span> Skills</div>
+      <div class="tab" data-tab="plugins"><span class="ico">🧩</span> Plugins</div>
+      <div class="tab" data-tab="sdk"><span class="ico">🛠️</span> SDK</div>
+    </aside>
+
+    <main class="content" id="content">
+      <!-- injected per tab -->
+    </main>
+  </div>
+
+<script type="module">
+  const BASE = location.origin;
+  const $ = (sel, el = document) => el.querySelector(sel);
+  const $$ = (sel, el = document) => Array.from(el.querySelectorAll(sel));
+  const el = (tag, attrs = {}, children = []) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') e.className = v;
+      else if (k === 'html') e.innerHTML = v;
+      else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+      else if (v === true) e.setAttribute(k, '');
+      else if (v === false || v == null) {}
+      else e.setAttribute(k, v);
+    }
+    for (const c of children) {
+      if (c == null || c === false) continue;
+      e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+    }
+    return e;
+  };
+
+  async function get(path) {
+    const r = await fetch(BASE + path, { headers: { Accept: 'application/json' } });
+    if (!r.ok) throw new Error(`GET ${path} ${r.status}`);
+    return r.json();
+  }
+  async function post(path, body) {
+    const r = await fetch(BASE + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body == null ? undefined : JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      throw new Error(`POST ${path} ${r.status} ${text}`);
+    }
+    return r.json();
+  }
+  async function jrpc(method, params, protocol) {
+    const r = await fetch(BASE + '/sdk/v1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: protocol === 'mcp' ? 'application/mcp+json, application/x-ndjson' :
+                protocol === 'acp' ? 'application/acp+json, application/x-ndjson' :
+                'application/json, application/x-ndjson',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params: params ?? {} }),
+    });
+    if (!r.ok) throw new Error(`JRPC ${method} ${r.status}`);
+    const ct = r.headers.get('Content-Type') || '';
+    if (ct.includes('ndjson')) {
+      const text = await r.text();
+      const first = text.split('\n').filter(Boolean)[0];
+      return first ? JSON.parse(first) : null;
+    }
+    return r.json();
+  }
+
+  // health
+  async function refreshHealth() {
+    try {
+      const p = await get('/api/ui/sdk-info');
+      $('#healthDot').className = 'dot ok';
+      $('#healthText').textContent = `SDK · ${p.info.version} · ${p.info.protocols.join(' / ')}`;
+    } catch (e) {
+      $('#healthDot').className = 'dot bad';
+      $('#healthText').textContent = 'Server unreachable: ' + e.message;
+    }
+  }
+  $('#refreshBtn').addEventListener('click', () => { renderCurrent(); refreshHealth(); });
+
+  // ---- Minimal markdown-like renderer (without external deps) ----
+  function escapeHTML(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+  function renderMD(text) {
+    if (text == null) return '';
+    let src = String(text);
+    // code blocks ```
+    const blocks = [];
+    src = src.replace(/```([A-Za-z0-9_+\-]*)\n([\s\S]*?)```/g, (_, lang, body) => {
+      blocks.push(`<pre><code data-lang="${escapeHTML(lang)}">${escapeHTML(body)}</code></pre>`);
+      return `\u0000B${blocks.length - 1}\u0000`;
+    });
+    src = escapeHTML(src);
+    // headings (flat, only h3-h4 to avoid clutter)
+    src = src.replace(/^\s*#{1,4}\s+(.*)$/gm, (_, t) => `<p style="font-weight:600;margin-top:10px;">${t}</p>`);
+    // inline code `xxx`
+    src = src.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
+    // bold
+    src = src.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    // links [text](url)
+    src = src.replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    // paragraphs
+    src = `<p>${src.split(/\n{2,}/).map(p => p.replace(/\n/g, '<br/>')).join('</p><p>')}</p>`;
+    // restore blocks
+    src = src.replace(/\u0000B(\d+)\u0000/g, (_, i) => blocks[+i] ?? '');
+    return src;
+  }
+
+  // ---- State ----
+  const state = {
+    tab: 'chat',
+    sessions: [],
+    skills: [],
+    plugins: [], pending: [], approvalModels: [],
+    compaction: null,
+    selectedSessionId: null,
+    selectedSession: null,
+    sdkInfo: null, tools: [],
+  };
+
+  // ---- Tabs wiring ----
+  $$('.tab', $('#tabs')).forEach(t => {
+    t.addEventListener('click', () => {
+      $$('.tab', $('#tabs')).forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      state.tab = t.dataset.tab;
+      history.replaceState(null, '', '#' + state.tab);
+      renderCurrent();
+    });
+  });
+  if (location.hash) state.tab = location.hash.slice(1) || 'chat';
+  const initial = $(`.tab[data-tab="${state.tab}"]`, $('#tabs'));
+  if (initial) {
+    $$('.tab', $('#tabs')).forEach(x => x.classList.remove('active'));
+    initial.classList.add('active');
+  }
+
+  // ---- Renderers per tab ----
+  const content = $('#content');
+
+  async function loadAll() {
+    const [si, sk, pl, cmp] = await Promise.all([
+      get('/api/ui/sdk-info'),
+      get('/api/ui/skills'),
+      get('/api/ui/plugins'),
+      get('/api/ui/compaction'),
+    ]);
+    state.sdkInfo = si.info; state.tools = si.tools?.tools ?? [];
+    state.skills = sk.skills ?? [];
+    state.plugins = pl.plugins ?? []; state.pending = pl.pending ?? []; state.approvalModels = pl.models ?? [];
+    state.compaction = cmp;
+  }
+
+  async function loadSessions() {
+    const r = await get('/api/ui/sessions?limit=100');
+    state.sessions = r.sessions ?? [];
+    if (!state.selectedSessionId && state.sessions.length) {
+      state.selectedSessionId = state.sessions[0].id;
+    }
+  }
+
+  async function loadSelectedSession() {
+    if (!state.selectedSessionId) { state.selectedSession = null; return; }
+    try {
+      state.selectedSession = await get(`/api/ui/sessions/${encodeURIComponent(state.selectedSessionId)}`);
+    } catch { state.selectedSession = null; }
+  }
+
+  function renderToolbar(breadcrumb, children = []) {
+    return el('div', { class: 'page-head' }, [
+      el('div', {}, [ el('h2', {}, breadcrumb.title), el('div', { class: 'sub' }, breadcrumb.sub ?? '') ]),
+      el('div', { class: 'spacer' }),
+      el('div', { class: 'toolbar' }, children),
+    ]);
+  }
+
+  function chatMessagesFromSession(sess) {
+    const proj = sess?.projection ?? {};
+    const msgs = Array.isArray(proj.messages) ? proj.messages : [];
+    const evs = Array.isArray(sess?.events) ? sess.events : [];
+    const trimmedNote = evs.filter(e => e.type === 'MessagesTrimmed')
+      .map(e => ({ role: 'system', content: `[Messages trimmed from seq ${e.data?.keepFrom ?? '?'} strategy=${e.data?.strategy ?? '?'}]` }));
+    return [...trimmedNote, ...msgs];
+  }
+
+  function roleAvatar(role) {
+    if (role === 'user') return 'YOU';
+    if (role === 'assistant') return 'AI';
+    if (role === 'system') return 'SYS';
+    return '?';
+  }
+
+  function renderMessage(m) {
+    const role = m.role || 'system';
+    const content = typeof m.content === 'string' ? m.content :
+      (Array.isArray(m.content) ? m.content.filter(c => c.type === 'text').map(c => c.text).join('\n\n') : JSON.stringify(m));
+    const tools = Array.isArray(m.toolCalls) ? m.toolCalls : [];
+    const tc = tools.length
+      ? tools.map(tc => el('div', { class: 'toolcall' }, [
+          el('div', { class: 'title' }, [
+            '🛠 ',
+            tc.name,
+            el('span', { class: 'meta' }, tc.id ? `#${tc.id}` : ''),
+          ]),
+          el('div', { class: 'meta' }, ['input: ', el('code', {}, JSON.stringify(tc.input ?? tc.arguments ?? {}).slice(0, 200))]),
+          el('details', {}, [
+            el('summary', {}, 'Show input & result'),
+            el('pre', {}, [
+              el('div', {}, 'INPUT: ' + JSON.stringify(tc.input ?? tc.arguments ?? {}, null, 2)),
+              el('div', { style: 'margin-top:6px;' }, 'RESULT: ' + JSON.stringify(tc.result ?? tc.output ?? (tc.content ?? ''), null, 2)),
+            ]),
+          ]),
+        ]))
+      : [];
+    return el('div', { class: `msg ${role}` }, [
+      el('div', { class: 'avatar' }, roleAvatar(role)),
+      el('div', {}, [
+        el('div', { class: 'role' }, `${role.toUpperCase()}${m.createdAt ? ' · ' + new Date(m.createdAt).toLocaleString() : ''}`),
+        el('div', { class: 'body', html: renderMD(content) }),
+        ...tc,
+      ]),
+    ]);
+  }
+
+  async function renderChat() {
+    if (!state.sessions.length) await loadSessions();
+    if (state.selectedSessionId && (!state.selectedSession || state.selectedSession.projection?.id !== state.selectedSessionId)) {
+      await loadSelectedSession();
+    }
+
+    // Live messages list: projection messages + any unsent streaming messages we're composing
+    let liveMsgs = chatMessagesFromSession(state.selectedSession);
+    if (state._liveMessages && state.selectedSessionId && state._liveMessages.sessionId === state.selectedSessionId) {
+      liveMsgs = state._liveMessages.items.slice();
+    }
+
+    const newBtn = el('button', { class: 'btn sm primary', onclick: () => {
+      state.selectedSessionId = null;
+      state.selectedSession = null;
+      state._liveMessages = null;
+      renderCurrent();
+    } }, '＋ New Chat');
+
+    const listEl = el('div', { class: 'list' });
+    const renderSessions = () => {
+      listEl.innerHTML = '';
+      // prepend "New Chat" row
+      const newRow = el('div', { class: 'row' + (!state.selectedSessionId ? ' selected' : '') }, [
+        el('div', { class: 'grow' }, [
+          el('div', { class: 't' }, [ '＋ New Chat' ]),
+          el('div', { class: 'm' }, 'Start a new conversation from Web UI'),
+        ]),
+        el('span', { class: 'badge primary' }, 'unsaved'),
+      ]);
+      newRow.addEventListener('click', () => { state.selectedSessionId = null; state.selectedSession = null; state._liveMessages = null; renderCurrent(); });
+      listEl.appendChild(newRow);
+      state.sessions.forEach(s => {
+        const r = el('div', { class: 'row' + (s.id === state.selectedSessionId ? ' selected' : '') }, [
+          el('div', { class: 'grow' }, [
+            el('div', { class: 't' }, s.title || `Session ${s.id.slice(0,8)}`),
+            el('div', { class: 'm' }, [
+              `${s.id} · Msgs: ${s.messageCount ?? 0} · Turn: ${s.turnCount ?? 0} · createdAt: ${new Date(s.createdAt).toLocaleString()}`,
+            ]),
+          ]),
+          (s.forkedFrom ? el('span', { class: 'badge info' }, 'fork') : null),
+          (s.archived ? el('span', { class: 'badge warn' }, 'archived') : el('span', { class: 'badge success' }, 'active')),
+        ]);
+        r.addEventListener('click', () => { state.selectedSessionId = s.id; state.selectedSession = null; state._liveMessages = null; renderCurrent(); });
+        listEl.appendChild(r);
+      });
+      if (!state.sessions.length) listEl.appendChild(el('div', { class: 'empty-hint' }, 'No sessions yet — send a message below!'));
+    };
+    renderSessions();
+
+    // Compose area
+    const modelSel = el('select', { style: 'max-width:200px; min-width:180px' });
+    const fillModels = async () => {
+      try {
+        const cfg = await get('/api/ui/sdk-info');
+        const cfg2 = (cfg.info.config || {});
+        const cfgModels = (cfg2.availableModels || []);
+        const def = cfg2.defaultModel || cfg.info.defaultModel || state.sdkInfo?.defaultModel;
+        const arr = Array.isArray(cfgModels) && cfgModels.length ? cfgModels : [
+          { model: def || 'deepseek-chat', display: (def || 'deepseek-chat') + ' (default)' },
+        ];
+        modelSel.innerHTML = '';
+        arr.forEach(m => {
+          const key = m.model || m.id || m;
+          const label = m.display || m.name || key;
+          modelSel.appendChild(el('option', { value: key, selected: key === def ? 'selected' : null }, label));
+        });
+        if (!modelSel.value && def) {
+          const o = el('option', { value: def }, def); modelSel.appendChild(o); modelSel.value = def;
+        }
+      } catch {}
+    };
+    fillModels();
+
+    const msgWrap = el('div', { class: 'messages' });
+    const appendMessages = () => {
+      msgWrap.innerHTML = '';
+      const arr = liveMsgs.length ? liveMsgs : [
+        el('div', { class: 'session-empty' }, [
+          el('div', {}, 'No messages yet.'),
+          el('div', { class: 'muted small', style: 'margin-top:8px' },
+            'Send a message below to start chatting with your model.'),
+        ]),
+      ];
+      arr.forEach(m => {
+        if (m.nodeType === 1) msgWrap.appendChild(m);
+        else msgWrap.appendChild(renderMessage(m));
+      });
+      msgWrap.scrollTop = msgWrap.scrollHeight;
+    };
+    appendMessages();
+
+    const ta = el('textarea', { rows: 3, placeholder: 'Send a message… (Shift+Enter for newline, Enter to send)', style: 'width:100%' });
+    const sendBtn = el('button', { class: 'btn primary' }, '⮐ Send');
+    const stopBtn = el('button', { class: 'btn danger sm', style: 'display:none' }, '■ Stop');
+    let streamAbort = null;
+    const statusBar = el('div', { class: 'muted small' }, '');
+    const assistantMsgLive = () => {
+      const last = liveMsgs[liveMsgs.length - 1];
+      return last && last.role === 'assistant' ? last : null;
+    };
+
+    const pushLive = (m) => {
+      if (!state._liveMessages || state._liveMessages.sessionId !== state.selectedSessionId) {
+        state._liveMessages = { sessionId: state.selectedSessionId, items: liveMsgs.slice() };
+      }
+      state._liveMessages.items.push(m);
+      liveMsgs = state._liveMessages.items;
+      // append one node instead of full re-render to avoid flicker
+      msgWrap.appendChild(renderMessage(m));
+      msgWrap.scrollTop = msgWrap.scrollHeight;
+    };
+
+    const reRenderLastMsg = () => {
+      if (!state._liveMessages) return;
+      const arr = state._liveMessages.items;
+      // re-render last message
+      while (msgWrap.childElementCount > Math.max(0, arr.length - 1)) {
+        if (msgWrap.lastChild && msgWrap.childElementCount > arr.length - 1) msgWrap.removeChild(msgWrap.lastChild);
+        else break;
+      }
+      if (arr.length) {
+        const last = arr[arr.length - 1];
+        msgWrap.appendChild(renderMessage(last));
+        msgWrap.scrollTop = msgWrap.scrollHeight;
+      }
+    };
+
+    const sendMessage = async () => {
+      const text = ta.value.trim(); if (!text) return;
+      const model = modelSel.value || undefined;
+      ta.value = '';
+
+      // Build messages list for the request
+      const baseSessionId = state.selectedSessionId;
+      // Use live messages list as the source of truth (already updated with prior turns)
+      const messagesToSend = state._liveMessages && state._liveMessages.sessionId === baseSessionId
+        ? state._liveMessages.items.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content || '', toolCalls: m.toolCalls }))
+        : chatMessagesFromSession(state.selectedSession).filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content || '' }));
+
+      // push user msg immediately
+      const userMsg = { role: 'user', content: text, createdAt: Date.now() };
+      if (!state._liveMessages || state._liveMessages.sessionId !== baseSessionId) {
+        state._liveMessages = { sessionId: baseSessionId, items: messagesToSend.map(m => ({ ...m })) };
+        liveMsgs = state._liveMessages.items;
+      }
+      pushLive(userMsg);
+      messagesToSend.push({ role: 'user', content: text });
+
+      // empty assistant waiting message
+      const assistant = { role: 'assistant', content: '', createdAt: Date.now(), toolCalls: [] };
+      pushLive(assistant);
+      const toolNameMap = new Map();
+
+      sendBtn.disabled = true; ta.disabled = true; stopBtn.style.display = '';
+      statusBar.textContent = '⏳ Running…';
+
+      try {
+        const ctrl = new AbortController(); streamAbort = ctrl;
+        const body = { message: text, sessionId: baseSessionId || undefined, model, messages: baseSessionId ? messagesToSend : undefined };
+        const res = await fetch(BASE + '/api/ui/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+          body: JSON.stringify(body),
+          signal: ctrl.signal,
+        });
+        if (!res.ok) { const t = await res.text(); throw new Error(`HTTP ${res.status} ${t.slice(0,200)}`); }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buf = '';
+        const parseEvent = (raw) => {
+          const lines = raw.split(/\r?\n/);
+          let event = 'message'; let data = [];
+          for (const line of lines) {
+            if (line.startsWith('event:')) event = line.slice(6).trim();
+            else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
+          }
+          try { return { event, data: JSON.parse(data.join('\n')) }; } catch { return { event, data: {} }; }
+        };
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf('\n\n')) >= 0) {
+            const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+            const { event, data } = parseEvent(chunk);
+            switch (event) {
+              case 'session': {
+                if (!state.selectedSessionId) { state.selectedSessionId = data.sessionId; state._liveMessages.sessionId = data.sessionId; }
+                statusBar.textContent = '⚙️ Session: ' + (state.selectedSessionId || '').slice(0, 14);
+                break;
+              }
+              case 'text_delta': {
+                assistant.content += (data.text || '');
+                reRenderLastMsg();
+                break;
+              }
+              case 'tool_start': {
+                statusBar.textContent = '🛠 ' + (data.toolName || 'tool') + ' running…';
+                const tc = { id: data.id || ('t' + assistant.toolCalls.length), name: data.toolName || '', input: {}, result: '' };
+                assistant.toolCalls.push(tc); toolNameMap.set(data.id, assistant.toolCalls.length - 1);
+                reRenderLastMsg();
+                break;
+              }
+              case 'tool_done': {
+                const idx = typeof data.id !== 'undefined' ? toolNameMap.get(data.id) : (assistant.toolCalls.length - 1);
+                if (idx != null && assistant.toolCalls[idx]) {
+                  assistant.toolCalls[idx].result = data.toolResult || '';
+                  assistant.toolCalls[idx].isError = !!data.isError;
+                  reRenderLastMsg();
+                }
+                break;
+              }
+              case 'permission_request': {
+                statusBar.textContent = '🔒 Permission: ' + (data.tool || 'tool') + ' — ' + (data.effect || 'pending');
+                break;
+              }
+              case 'done': {
+                statusBar.textContent = `✔ Done · in=${data.inputTokens || 0} tok · out=${data.outputTokens || 0} tok`;
+                break;
+              }
+              case 'error': {
+                statusBar.textContent = '❌ Error: ' + (data.error || '');
+                assistant.content += (assistant.content ? '\n\n⚠️ ' : '⚠️ ') + (data.error || '');
+                reRenderLastMsg();
+                break;
+              }
+              case 'final': {
+                if (data?.messages?.length && assistant.content === '') {
+                  // server-side synthesized; copy last assistant message body
+                  const lastA = [...data.messages].reverse().find(m => m.role === 'assistant');
+                  if (lastA) {
+                    if (typeof lastA.content === 'string') assistant.content = lastA.content;
+                    if (Array.isArray(lastA.toolCalls)) assistant.toolCalls = lastA.toolCalls;
+                    reRenderLastMsg();
+                  }
+                }
+                break;
+              }
+            }
+          }
+        }
+        // After stream: refresh sessions list & selected session projection if we know session id
+        if (state.selectedSessionId) {
+          try {
+            state.selectedSession = await get(`/api/ui/sessions/${encodeURIComponent(state.selectedSessionId)}`);
+            // If we have live edits (text_delta) keep them; otherwise use projection
+            // (don't overwrite unless we are sure projection contains new content)
+          } catch {}
+          try { await loadSessions(); renderSessions(); } catch {}
+        }
+      } catch (e) {
+        if (e.name === 'AbortError') statusBar.textContent = '⏹ Stopped';
+        else { statusBar.textContent = '❌ Error: ' + e.message; assistant.content += '\n\n⚠️ ' + e.message; reRenderLastMsg(); }
+      } finally {
+        sendBtn.disabled = false; ta.disabled = false; stopBtn.style.display = 'none';
+        streamAbort = null;
+      }
+    };
+
+    sendBtn.addEventListener('click', sendMessage);
+    stopBtn.addEventListener('click', () => { if (streamAbort) streamAbort.abort(); });
+    ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
+
+    content.innerHTML = '';
+    content.appendChild(renderToolbar({ title: '💬 Chat', sub: 'Direct conversation with your LLM. Token-by-token streaming, session persistence, tool-call rendering.' }, [
+      newBtn,
+      el('button', { class: 'btn sm ghost', onclick: async () => { await loadSessions(); renderSessions(); if (state.selectedSessionId) { await loadSelectedSession(); state._liveMessages = null; liveMsgs = chatMessagesFromSession(state.selectedSession); appendMessages(); } } }, '⟳ Reload'),
+    ]));
+
+    content.appendChild(el('div', { class: 'two-col' }, [
+      el('div', { class: 'card' }, [
+        el('div', { class: 'card-head' }, [`📂 Sessions (${state.sessions.length})`]),
+        el('div', { class: 'card-body' }, [ listEl ]),
+      ]),
+      el('div', { class: 'card' }, [
+        el('div', { class: 'card-head' }, [
+          state.selectedSessionId ? `💬 ${state.selectedSession?.projection?.title || ('Session ' + state.selectedSessionId.slice(0,8))}` : '💬 New Chat',
+          el('div', { class: 'spacer' }),
+          state.selectedSessionId ? el('span', { class: 'badge primary' }, `ID ${String(state.selectedSessionId).slice(0, 10)}`) : el('span', { class: 'badge primary' }, 'unsaved'),
+          state.selectedSessionId ? el('span', { class: 'badge' }, `${liveMsgs.filter(m => m.role !== 'system').length} msgs`) : null,
+          modelSel,
+        ]),
+        el('div', { class: 'card-body', style: 'display:flex; flex-direction:column; gap:12px;' }, [
+          msgWrap,
+          el('div', { style: 'display:flex; gap:8px; align-items:flex-end;' }, [
+            ta,
+            el('div', { style: 'display:flex; flex-direction:column; gap:6px;' }, [sendBtn, stopBtn]),
+          ]),
+          statusBar,
+          el('details', { class: 'trace' }, [
+            el('summary', {}, 'Tips'),
+            el('ul', { class: 'tree' }, [
+              el('li', {}, 'Enter to send, Shift+Enter for newline'),
+              el('li', {}, 'Streaming: text_delta streamed SSE token-by-token from QueryEngine'),
+              el('li', {}, 'Sessions are persisted via Event Sourcing (see Sessions tab)'),
+              el('li', {}, 'Web UI permission policy: bash / write / delete actions denied on first run for safety — change via "onPermissionRequest" in webServer.js'),
+            ]),
+          ]),
+        ]),
+      ]),
+    ]));
+
+    // Session events tree (only for loaded sessions with stored events)
+    if (state.selectedSession && state.selectedSession.events?.length) {
+      const typeCount = {};
+      for (const e of state.selectedSession.events) typeCount[e.type] = (typeCount[e.type] || 0) + 1;
+      content.appendChild(el('div', { class: 'card' }, [
+        el('div', { class: 'card-head' }, [
+          `📜 Event Log · ${state.selectedSession.events.length} events`,
+          el('div', { class: 'spacer' }),
+          ...Object.entries(typeCount).slice(0, 10).map(([k, v]) => el('span', { class: 'badge' }, `${k} ×${v}`)),
+        ]),
+        el('div', { class: 'card-body' }, [
+          el('details', {}, [
+            el('summary', {}, 'Event log (click to expand)'),
+            el('div', { class: 'code-block', style: 'max-height:320px; overflow:auto;' }, [
+              state.selectedSession.events.slice(-200).map(e =>
+                `[${String(e.seq).padStart(4)}] ${e.type.padEnd(26)} ${new Date(e.timestamp).toISOString()}  ${JSON.stringify(e.data ?? {}).slice(0, 180)}\n`).join('')
+            ]),
+          ]),
+        ]),
+      ]));
+    }
+  }
+
+  async function renderSessions() {
+    if (!state.sessions.length) await loadSessions();
+    content.innerHTML = '';
+    content.appendChild(renderToolbar({ title: 'Sessions', sub: 'All sessions stored in Event-Sourcing store (see ~/.guang-code/state/sessions)' }, [
+      el('button', { class: 'btn sm primary', onclick: () => loadSessions().then(renderCurrent) }, '⟳ Reload'),
+    ]));
+    const rows = state.sessions.map(s => {
+      const row = el('div', { class: 'row' }, [
+        el('div', { class: 'grow' }, [
+          el('div', { class: 't' }, s.title || `(untitled) ${s.id.slice(0,8)}`),
+          el('div', { class: 'm' }, `ID: ${s.id} · messages=${s.messageCount ?? 0} · turns=${s.turnCount ?? 0} · createdAt=${new Date(s.createdAt).toLocaleString()}`),
+        ]),
+        el('span', { class: 'badge ' + (s.archived ? 'warn' : 'success') }, s.archived ? 'archived' : 'active'),
+        s.forkedFrom ? el('span', { class: 'badge info' }, `fork-of ${String(s.forkedFrom).slice(0,8)}`) : null,
+        el('button', { class: 'btn sm', onclick: () => { state.selectedSessionId = s.id; switchTab('chat'); } }, 'View →'),
+      ]);
+      return row;
+    });
+    content.appendChild(el('div', { class: 'card' }, [
+      el('div', { class: 'card-head' }, [`📂 ${state.sessions.length} session(s)`]),
+      el('div', { class: 'card-body list' }, state.sessions.length ? rows : el('div', { class: 'empty-hint' }, 'No sessions yet. Run gc in terminal to create one.')),
+    ]));
+  }
+
+  async function renderSkills() {
+    if (!state.skills.length) { state.skills = (await get('/api/ui/skills')).skills ?? []; }
+    content.innerHTML = '';
+
+    const scopeSel = el('select', {},
+      [['', 'All scopes'],['builtin','builtin'],['global','global'],['project','project'],['session','session'],['runtime','runtime']].map(([v, l]) => el('option', { value: v }, l))
+    );
+    const search = el('input', { type: 'search', placeholder: 'Search skills by id / description / tag…' });
+    const grid = el('div', { class: 'grid cols-3' });
+
+    function apply() {
+      const q = search.value.trim().toLowerCase();
+      const scope = scopeSel.value;
+      const arr = state.skills.filter(s => !scope || s.scope === scope)
+        .filter(s => !q || (s.id?.toLowerCase().includes(q) || s.title?.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q) ||
+          (Array.isArray(s.tags) && s.tags.join(',').toLowerCase().includes(q))));
+      grid.innerHTML = '';
+      if (!arr.length) { grid.appendChild(el('div', { class: 'empty-hint' }, 'No skills match.')); return; }
+      for (const sk of arr) {
+        grid.appendChild(el('div', { class: 'skill-card' }, [
+          el('div', { style: 'display:flex; align-items:center; gap:8px;' }, [
+            el('h4', {}, sk.title || sk.id),
+            el('div', { class: 'spacer' }),
+            el('span', { class: 'badge primary' }, sk.scope ?? '?'),
+          ]),
+          el('div', { class: 'muted small' }, sk.id),
+          el('div', { class: 'small' }, sk.description ? sk.description.slice(0, 200) : ''),
+          el('div', { class: 'tag-list' }, (sk.tags ?? []).map(t => el('span', { class: 'badge' }, `#${t}`))),
+          el('div', { class: 'small', style: 'display:flex; gap:6px; flex-wrap:wrap;' }, [
+            el('span', { class: 'badge info' }, `digest ${(sk.digest || '').slice(0, 10)}`),
+            el('span', { class: 'badge' }, `invocation: ${sk.renderInvocation ? '✓' : '—'}`),
+          ]),
+          el('details', { class: 'trace' }, [
+            el('summary', {}, 'Show invocation example / excerpt'),
+            el('pre', { class: 'code-block', style: 'margin: 6px 0 0;' },
+              (sk.renderInvocation ? (typeof sk.renderInvocation === 'string' ? sk.renderInvocation : JSON.stringify(sk.renderInvocation, null, 2))
+                : (sk.body ? String(sk.body).slice(0, 600) : '(no body)'))),
+          ]),
+        ]));
+      }
+    }
+    scopeSel.addEventListener('change', apply);
+    search.addEventListener('input', apply);
+    apply();
+
+    content.appendChild(renderToolbar({ title: 'Skills', sub: 'Multi-layered scoped skill registry (builtin → global → project → session → runtime)' }, [
+      search, scopeSel,
+      el('button', { class: 'btn sm primary', onclick: async () => { state.skills = (await get('/api/ui/skills')).skills; apply(); } }, '⟳ Rescan'),
+    ]));
+    content.appendChild(el('div', { class: 'grid cols-3' }, [
+      el('div', { class: 'card' }, [
+        el('div', { class: 'card-head' }, ['Scopes']),
+        el('div', { class: 'card-body' }, [
+          el('ul', { class: 'tree' }, [
+            'builtin (10) — shipped with guang-code',
+            'global (20) — ~/.guang-code/skills/',
+            'project (30) — <cwd>/.guang/skills/',
+            'session (40) — session-only ephemeral',
+            'runtime (50) — /skill inject (highest)',
+          ].map(x => el('li', {}, x)))
+        ]),
+      ]),
+      el('div', { class: 'card' }, [
+        el('div', { class: 'card-head' }, ['Incremental']),
+        el('div', { class: 'card-body' }, [
+          el('div', { class: 'muted small' },
+            'SHA-256 digests per scope stored in digests.json. Reloads only changed SKILL.md files; optional fs.watch for hot reload.'),
+          el('div', { style: 'margin-top:10px' }, [el('span', { class: 'badge success' }, `count ${state.skills.length}`)]),
+        ]),
+      ]),
+      el('div', { class: 'card' }, [
+        el('div', { class: 'card-head' }, ['Runtime inject']),
+        el('div', { class: 'card-body' }, [
+          el('div', { class: 'small muted' }, 'POST /api/ui/skills/inject {id, markdown, scope}. Equivalent to /skill inject in terminal.'),
+        ]),
+      ]),
+    ]));
+    content.appendChild(el('div', { class: 'card' }, [
+      el('div', { class: 'card-head' }, [`Skills (${state.skills.length})`]),
+      el('div', { class: 'card-body' }, [grid]),
+    ]));
+  }
+
+  async function renderPlugins() {
+    try {
+      const r = await get('/api/ui/plugins');
+      state.plugins = r.plugins ?? [];
+      state.pending = r.pending ?? [];
+      state.approvalModels = r.models ?? [];
+    } catch {}
+    content.innerHTML = '';
+
+    const proposeArea = el('div', { class: 'card' }, [
+      el('div', { class: 'card-head' }, ['🧪 Propose new plugin (runtime self-modify)']),
+      el('div', { class: 'card-body grid cols-2' }, [
+        el('div', {}, [
+          el('div', { class: 'small muted', style: 'margin-bottom:6px;' }, [
+            'Use YAML frontmatter (```--- ... ---```) or comment frontmatter (',
+            el('code', {}, '// ~key: value'),
+            ') in the source. Approval header can be: none / user_confirm / llm_vote / user_and_llm.'
+          ]),
+          el('textarea', { id: 'proposeSrc', rows: 14, placeholder: "Example:\n// ~name: logger\n// ~version: 0.1.0\n// ~approval: none\nactivate = function(api) {\n  api.hook('post', /Write|Edit/, (ctx) => {\n    api.fs.write('plugins-out/audit.ndjson', JSON.stringify({t:Date.now(), tool: ctx.toolName}) + '\\n');\n  });\n};\n" }),
+          el('div', { style: 'margin-top:8px; display:flex; gap:8px;' }, [
+            el('button', { class: 'btn primary', onclick: onPropose }, 'Propose'),
+            el('button', { class: 'btn ghost', onclick: () => { $('#proposeSrc').value = ''; } }, 'Clear'),
+          ]),
+        ]),
+        el('div', {}, [
+          el('div', { class: 'small muted' }, 'Approval models'),
+          el('ul', { class: 'tree' }, state.approvalModels.map(m => el('li', {}, m))),
+          el('div', { class: 'divider' }),
+          el('div', { class: 'small muted' }, 'Examples'),
+          el('details', { class: 'trace' }, [
+            el('summary', {}, 'Example 1: registerTool hello_plugin + pre hook'),
+            el('pre', { class: 'code-block' }, [
+`// ~name: hello_plugin
+// ~version: 1.0.0
+// ~approval: user_confirm
+activate = function(api) {
+  api.registerTool({
+    name: 'hello_plugin',
+    description: 'Says hello',
+    inputSchema: { type: 'object', properties: { name: { type: 'string' } } },
+    async execute(i) {
+      return { content: 'Hello, ' + (i.name || 'World') };
+    }
+  });
+  api.hook('pre', 'Read', (ctx) => api.log('pre-Read', ctx.input));
+};
+`
+            ]),
+          ]),
+        ]),
+      ]),
+    ]);
+
+    async function onPropose() {
+      const src = $('#proposeSrc')?.value;
+      if (!src || !src.trim()) return alert('Source required');
+      try {
+        const r = await post('/api/ui/plugins/propose', { source: src });
+        alert(r.ok ? `Proposed! pending=${r.proposal?.pending} approvalId=${r.proposal?.approvalId}` : ('Failed: ' + JSON.stringify(r)));
+        renderCurrent();
+      } catch (e) { alert(e.message); }
+    }
+
+    const pendingList = el('div', { class: 'list' }, state.pending.map(p => {
+      const plugin = state.plugins.find(x => x.id === p.pluginId);
+      return el('div', { class: 'row', style: 'flex-wrap:wrap;' }, [
+        el('div', { class: 'grow' }, [
+          el('div', { class: 't' }, [
+            plugin?.name || p.pluginId,
+            ' ',
+            el('span', { class: 'badge warn' }, `approval=${p.requiredApproval}`),
+          ]),
+          el('div', { class: 'm' }, `reqId=${p.approvalId} pluginId=${p.pluginId} · requestedAt=${new Date(p.requestedAt ?? Date.now()).toLocaleString()}`),
+          plugin?.requires?.length ? el('div', { class: 'muted small', style: 'margin-top:4px;' }, `requires: ${plugin.requires.join(', ')}`) : null,
+        ]),
+        el('div', { class: 'pending-actions' }, [
+          el('button', { class: 'btn success sm', onclick: async () => {
+            try { await post(`/api/ui/plugins/${encodeURIComponent(p.approvalId)}/approve`); alert('Approved'); renderCurrent(); }
+            catch (e) { alert('Approve failed: ' + e.message); }
+          } }, '✓ Approve'),
+          el('button', { class: 'btn danger sm', onclick: async () => {
+            try { await post(`/api/ui/plugins/${encodeURIComponent(p.approvalId)}/deny`); alert('Denied'); renderCurrent(); }
+            catch (e) { alert('Deny failed: ' + e.message); }
+          } }, '✗ Deny'),
+          el('details', { class: 'trace' }, [
+            el('summary', {}, 'Evidence'),
+            el('pre', { class: 'code-block' }, JSON.stringify(p.evidence ?? plugin ?? {}, null, 2).slice(0, 3000)),
+          ]),
+        ]),
+      ]);
+    }));
+
+    const pluginCards = state.plugins.map(p => el('div', { class: 'skill-card' }, [
+      el('div', { style: 'display:flex; align-items:center; gap:8px;' }, [
+        el('h4', {}, [ (p.name || p.id), el('span', { class: 'muted small' }, p.version ? ' v' + p.version : '') ]),
+        el('div', { class: 'spacer' }),
+        p.activated ? el('span', { class: 'badge success' }, 'active') : el('span', { class: 'badge warn' }, 'proposed'),
+      ]),
+      el('div', { class: 'small muted' }, `id=${p.id} · scope=${p.scope ?? 'runtime'} · approval=${p.approvalModel}`),
+      p.description ? el('div', { class: 'small' }, p.description) : null,
+      el('div', { class: 'tag-list' }, [
+        el('span', { class: 'badge info' }, `digest ${(p.digest || '').slice(0, 10)}`),
+        ...(p.tags ?? []).map(t => el('span', { class: 'badge' }, `#${t}`)),
+        ...(p.requires ?? []).map(t => el('span', { class: 'badge' }, `req:${t}`)),
+      ]),
+      p._activationLogs?.length ? el('details', { class: 'trace' }, [
+        el('summary', {}, `Activation logs (${p._activationLogs.length})`),
+        el('pre', { class: 'code-block' }, p._activationLogs.map(l => '- ' + l).join('\n')),
+      ]) : null,
+      p._error ? el('div', { class: 'small badge danger' }, 'Error: ' + String(p._error).slice(0, 200)) : null,
+    ]));
+
+    content.appendChild(renderToolbar({ title: 'Plugins', sub: 'Runtime plugin lifecycle: parse → propose → approval → activate(sandboxed) → deactivate' }, [
+      state.pending.length ? el('span', { class: 'badge warn' }, `${state.pending.length} pending`) : null,
+      el('button', { class: 'btn sm primary', onclick: renderCurrent }, '⟳ Refresh'),
+    ]));
+    content.appendChild(proposeArea);
+    content.appendChild(el('div', { class: 'card' }, [
+      el('div', { class: 'card-head' }, [`⏳ Pending approvals · ${state.pending.length}`]),
+      el('div', { class: 'card-body' }, [state.pending.length ? pendingList : el('div', { class: 'empty-hint' }, 'No pending approvals.')]),
+    ]));
+    content.appendChild(el('div', { class: 'card' }, [
+      el('div', { class: 'card-head' }, [`🧩 Plugins · ${state.plugins.length}`]),
+      el('div', { class: 'card-body grid cols-3' }, state.plugins.length ? pluginCards : el('div', { class: 'empty-hint' }, 'No plugins yet. Propose one above!')),
+    ]));
+  }
+
+  async function renderSdk() {
+    if (!state.sdkInfo) await loadAll();
+    content.innerHTML = '';
+
+    const jrpcDot = el('span', { class: 'ping-cell' }, [el('div', { class: 'name' }, 'JSON-RPC 2.0'), el('div', { class: 'state' }, 'testing…')]);
+    const mcpDot = el('span', { class: 'ping-cell' }, [el('div', { class: 'name' }, 'MCP'), el('div', { class: 'state' }, 'testing…')]);
+    const acpDot = el('span', { class: 'ping-cell' }, [el('div', { class: 'name' }, 'ACP (pubsub)'), el('div', { class: 'state' }, 'testing…')]);
+    const doPings = async () => {
+      const mark = (node, ok, txt) => { node.classList.remove('ok', 'bad'); node.classList.add(ok ? 'ok' : 'bad'); const s = node.querySelector('.state'); if (s) s.textContent = txt; };
+      try {
+        const jrpcR = await jrpc('sdk.info', {}, 'jsonrpc');
+        mark(jrpcDot, !!jrpcR?.result, !!jrpcR?.result ? 'ok v' + jrpcR.result.version : 'err');
+      } catch (e) { mark(jrpcDot, false, e.message); }
+      try {
+        const init = await jrpc('initialize', { protocolVersion: '2024-11-05', clientInfo: { name: 'web-ui' } }, 'mcp');
+        const list = await jrpc('tools/list_mcp', {}, 'mcp');
+        mark(mcpDot, !!(init?.result?.serverInfo && list?.result),
+          init?.result?.serverInfo ? `init ${init.result.serverInfo.name}/${init.result.serverInfo.version} · ${list?.result?.tools?.length ?? 0} tools` : 'err');
+      } catch (e) { mark(mcpDot, false, e.message); }
+      try {
+        const sub = await jrpc('acp.subscribe', { topic: 'web.ping' }, 'acp');
+        const pub = await jrpc('acp.publish', { topic: 'web.ping', payload: { t: Date.now() } }, 'acp');
+        mark(acpDot, !!(sub?.result?.ok && pub?.result),
+          sub?.result?.ok ? `ok (${sub.result.subscribers} subscriber(s))` : 'err');
+      } catch (e) { mark(acpDot, false, e.message); }
+    };
+
+    content.appendChild(renderToolbar({ title: 'SDK Interop', sub: '3 protocols × 3 transports · MCP + ACP + JSON-RPC unified' }, [
+      el('button', { class: 'btn sm primary', onclick: doPings }, '↺ Ping all'),
+    ]));
+
+    content.appendChild(el('div', { class: 'grid cols-2' }, [
+      el('div', { class: 'card' }, [
+        el('div', { class: 'card-head' }, ['Protocol health']),
+        el('div', { class: 'card-body' }, [
+          el('div', { class: 'ping-grid' }, [jrpcDot, mcpDot, acpDot]),
+          el('div', { class: 'small muted', style: 'margin-top:12px;' },
+            'All pings use the same POST endpoint at /sdk/v1 with Accept headers to choose protocol. SSE at /sdk/v1/sse.'),
+        ]),
+      ]),
+      el('div', { class: 'card' }, [
+        el('div', { class: 'card-head' }, ['Package info @guang-code/sdk']),
+        el('div', { class: 'card-body' }, [
+          el('div', { class: 'kv' }, [
+            el('div', { class: 'k' }, 'Name'), el('div', {}, state.sdkInfo?.name || 'guang-code-sdk'),
+            el('div', { class: 'k' }, 'Version'), el('div', {}, state.sdkInfo?.version || '—'),
+            el('div', { class: 'k' }, 'Protocols'), el('div', {}, (state.sdkInfo?.protocols || []).map(p => el('span', { class: 'badge primary' }, p))),
+            el('div', { class: 'k' }, 'Capabilities'),
+            el('div', {}, Object.entries(state.sdkInfo?.capabilities || {}).map(([k, v]) =>
+              el('span', { class: 'badge ' + (v ? 'success' : 'warn') }, `${k}:${v ? 'yes' : 'no'}`))),
+            el('div', { class: 'k' }, 'Endpoints'),
+            el('div', {}, el('ul', { class: 'tree' }, Object.entries(state.sdkInfo?.endpoints || {}).map(([k, v]) =>
+              el('li', {}, `${k}: ${v}`)))),
+          ]),
+        ]),
+      ]),
+    ]));
+
+    content.appendChild(el('div', { class: 'card' }, [
+      el('div', { class: 'card-head' }, [`Tools list · ${state.tools.length}`]),
+      el('div', { class: 'card-body list' }, state.tools.map(t => {
+        const row = el('div', { class: 'row' }, [
+          el('div', { class: 'grow' }, [
+            el('div', { class: 't' }, t.name),
+            el('div', { class: 'm' }, t.description ? t.description.slice(0, 240) : '(no description)'),
+          ]),
+          ...(t.tags ?? []).slice(0, 3).map(g => el('span', { class: 'badge' }, g)),
+          el('span', { class: 'badge info' }, `timeout ${((t.timeoutMs ?? 180_000) / 1000).toFixed(0)}s`),
+        ]);
+        const d = el('details', {}, [
+          el('summary', {}, 'Schema'),
+          el('pre', { class: 'code-block' }, JSON.stringify(t.inputSchema ?? {}, null, 2)),
+        ]);
+        return el('div', {}, [row, d, el('div', { class: 'divider' }, '')]);
+      })),
+    ]));
+
+    if (state.compaction) {
+      content.appendChild(el('div', { class: 'card' }, [
+        el('div', { class: 'card-head' }, ['Compaction strategies (seam)']),
+        el('div', { class: 'card-body grid cols-3' }, [
+          el('div', {}, [
+            el('div', { class: 'small muted' }, 'Default strategy'),
+            el('div', { style: 'margin-top:4px;' }, el('span', { class: 'badge success' }, state.compaction.default)),
+          ]),
+          el('div', {}, [
+            el('div', { class: 'small muted' }, 'Registered'),
+            el('ul', { class: 'tree' }, (state.compaction.strategies || []).map(s =>
+              el('li', {}, s.name + (s.default ? ' (default)' : '') + ' — ' + (s.description || '')))),
+          ]),
+          el('div', {}, [
+            el('div', { class: 'small muted' }, 'Recent usage (last 10)'),
+            el('pre', { class: 'code-block' }, JSON.stringify((state.compaction.usage || []).slice(-10), null, 2)),
+          ]),
+        ]),
+      ]));
+    }
+
+    setTimeout(doPings, 50);
+  }
+
+  function switchTab(name) {
+    const t = $(`.tab[data-tab="${name}"]`, $('#tabs'));
+    if (t) t.click();
+  }
+
+  async function renderCurrent() {
+    content.innerHTML = '';
+    switch (state.tab) {
+      case 'chat': return await renderChat();
+      case 'sessions': return await renderSessions();
+      case 'skills': return await renderSkills();
+      case 'plugins': return await renderPlugins();
+      case 'sdk': return await renderSdk();
+      default: return await renderChat();
+    }
+  }
+
+  // init
+  await refreshHealth();
+  try { await loadSessions(); } catch {}
+  try { await loadAll(); } catch {}
+  await renderCurrent();
+</script>
+</body>
+</html>
