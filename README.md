@@ -99,6 +99,33 @@ Web UI 功能：
 
 ---
 
+## 🖥️ IDE — Electron 桌面版
+
+仓库自带一个原生桌面壳 (`ide/`)，把 Web UI + 后端服务装进一个 Electron 应用里：左中右三栏（Activity Bar · 文件树/编辑器 · AI Chat），底部 xterm.js 终端直连 PTY，AI chat 与 Web UI 共用同一套 SSE 流（事件名 → `ChatEvent` 映射）。
+
+```bash
+cd ide
+npm install
+npm run dev      # 同时拉起 vite (renderer) + electron (main) + 后端 child process
+npm run build    # 产出 dist/main + dist/renderer，可由 electron-builder 打包
+```
+
+主要组成：
+
+| 层 | 路径 | 作用 |
+|---|---|---|
+| Main | `ide/src/main/index.ts` | Electron 入口，引导 Backend / Pty / IPC |
+| Main | `ide/src/main/backend.ts` | spawn `scripts/start-ui.mjs` 作为后端子进程 |
+| Proxy | `ide/src/main/ipc.ts` | 把后端 SSE 流 (`event: text_delta` …) 转为渲染端 `ChatEvent` |
+| Preload | `ide/src/preload/index.ts` | `contextBridge` 暴露 `window.guang` API |
+| Renderer | `ide/src/renderer/` | React + Zustand + Monaco + xterm.js |
+| Renderer | `ide/src/renderer/components/ChatPanel.tsx` | AI Chat 面板（消息流 + Composer + Stop） |
+| Renderer | `ide/src/renderer/store/chat.ts` | 聊天状态机（assistant message、tool calls、pending） |
+
+> ⚠️ 构建产物 (`ide/dist/`) 不提交，需要运行时由 `npm run build` 产出。
+
+---
+
 ## 🧱 Architecture（与 DeepSeek Harness 对齐的 Seam）
 
 项目参考了 DeepSeek Harness (DSH) 的 60+ 子包分层，把每个高价值 seam 独立成轻量 class：
@@ -343,6 +370,29 @@ Built-in 9 个监听器（QueryEngine.ensurePipelineDefaultListeners 自动注�
 ---
 
 ## 🚦 Changelog
+
+### v2.2.0（IDE 桌面版首发 · 2026-10-19）
+
+仓库新增 `ide/`：Electron + React + Monaco + xterm.js 桌面 IDE，复用现有 Web UI / SDK / 后端能力。
+
+#### ✨ 新增
+
+- `ide/`：Electron 桌面壳（main / preload / renderer 三段式）。
+- ActivityBar + 文件树 + Monaco 编辑器 + 底部 PTY 面板 + 右侧 AI Chat 三栏布局。
+- AI Chat 走 IPC ↔ 主进程 ↔ 后端 SSE 双向管道；主进程把 `event: text_delta / tool_* / permission_* / done / final / error` 标准化为渲染端 `ChatEvent`。
+- `ide/src/main/ipc.ts`：SSE 帧解析（`event:` + `data:` 双行识别）+ 后端事件名 → `ChatEvent.type` 映射。
+- `ide/src/main/backend.ts`：自动 spawn `scripts/start-ui.mjs` 作为后端子进程，解析 banner 中的 `URL:` 标识 readiness。
+
+#### 🐛 修复
+
+- IDE AI Chat 发送消息后无回复：根因是主进程 SSE 解析只读 `data:` 行、丢失了 `event:` 字段，导致事件对象没有 `type`；改为同时读两行并映射事件名。
+- `package.json` / `dist/tools/*` / `dist/utils/pmContext.js` 同步小修。
+
+#### 📝 文档
+
+- README 新增 `IDE — Electron 桌面版` 章节。
+
+---
 
 ### v2.1.0（稳定性与可运维性补丁 · 2026-08-15）
 

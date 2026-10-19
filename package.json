@@ -1,12 +1,11 @@
 {
   "name": "guang-code",
   "version": "1.2.2",
-  "description": "Guang Code - Terminal AI Coding Assistant (Claude Code + DeepSeek Harness architecture)",
-  "main": "dist/main.js",
-  "bin": {
-    "gc": "./dist/main.js",
-    "guang": "./dist/main.js"
-  },
+  "private": true,
+  "description": "Guang Code - Terminal AI Coding Assistant + IDE (Claude Code + DeepSeek Harness architecture)",
+  "workspaces": [
+    "ide"
+  ],
   "scripts": {
     "start": "node dist/main.js",
     "dev": "node --watch dist/main.js",
@@ -15,10 +14,27 @@
     "webui": "node scripts/start-ui.mjs",
     "ui:status": "node scripts/check-ui.mjs",
     "ui:stop": "node scripts/stop-ui.mjs",
-    "install-global": "npm link"
+    "install-global": "npm link",
+    "ide": "npm run -w @guang-code/ide build:main && concurrently -k -n vite,electron -c blue,green \"npm:ide:dev:vite\" \"npm:ide:dev:electron\"",
+    "ide:dev:vite": "cd ide && vite",
+    "ide:dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron ide/dist/main/index.js",
+    "ide:build": "cd ide && npm run build",
+    "ide:package": "cd ide && npm run package"
   },
   "type": "module",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "chalk": "^6.0.1",
+    "commander": "^15.0.0",
+    "figures": "^6.1.0",
+    "glob": "^7.2.3",
+    "ink": "^8.0.0",
+    "ink-text-input": "^6.0.0",
+    "openai": "^7.39.0",
+    "react": "^19.3.1"
   }
 }

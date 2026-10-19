@@ -1,7 +1,7 @@
 // ============================================================
 //  Guang Code — GlobTool
 // ============================================================
-import { glob } from 'glob';
+import { glob } from '../../scripts/glob-shim.mjs';
 import { validateGlobPattern } from '../utils/pathSafety.js';
 export const GlobTool = {
     name: 'Glob',

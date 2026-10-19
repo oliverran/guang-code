@@ -1,0 +1,51 @@
+appId: ai.guangcode.ide
+productName: Guang Code
+copyright: Copyright © 2026 Guang Code
+artifactName: ${productName}-${version}-${arch}.${ext}
+
+directories:
+  output: release
+  buildResources: electron
+
+files:
+  - dist/**/*
+  - package.json
+  - "!**/.git"
+  - "!**/.DS_Store"
+
+asar: true
+asarUnpack:
+  - "**/*.node"        # node-pty native module
+
+# macOS settings
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  darkModeSupport: true
+  extendInfo:
+    NSHumanReadableCopyright: Copyright © 2026 Guang Code
+    LSApplicationCategoryType: public.app-category.developer-tools
+    NSAppleEventsUsageDescription: Used for shell integration in the IDE terminal.
+
+# Windows settings
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+
+# Linux settings
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Development

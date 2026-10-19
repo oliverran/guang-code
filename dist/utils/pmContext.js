@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { mkdir, readFile, stat, writeFile } from 'fs/promises';
 import path from 'path';
-import { glob } from 'glob';
+import { glob } from '../../scripts/glob-shim.mjs';
 import { assertSafeLocalPath, isLikelyTextFileExt, resolveRealPathWithinCwd } from './pathSafety.js';
 function pmDir(cwd) {
     return path.join(cwd, '.guang', 'pm');

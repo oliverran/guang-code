@@ -3,7 +3,7 @@
 // ============================================================
 import { execFile } from 'child_process';
 import { readFile, stat } from 'fs/promises';
-import { glob } from 'glob';
+import { glob } from '../../scripts/glob-shim.mjs';
 import { promisify } from 'util';
 import { assertSafeLocalPath, validateGlobPattern } from '../utils/pathSafety.js';
 const execFileAsync = promisify(execFile);
