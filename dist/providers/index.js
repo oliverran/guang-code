@@ -76,7 +76,8 @@ export function createProvider(model, config, apiKeyOverride) {
         case 'minimax': {
             const baseUrl = providers['minimax']?.baseUrl ??
                 process.env.MINIMAX_BASE_URL;
-            return new MiniMaxProvider(apiKey, baseUrl);
+            const reasoningEffort = providers['minimax']?.reasoningEffort;
+            return new MiniMaxProvider(apiKey, baseUrl, reasoningEffort);
         }
         case 'openai-compatible': {
             const baseUrl = providers['openai-compatible']?.baseUrl ??

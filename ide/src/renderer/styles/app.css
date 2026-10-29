@@ -392,6 +392,9 @@ button:disabled {
   background: var(--bg-2);
   border-left: 1px solid var(--border);
   min-width: 0;
+  /* Grid item default min-height:auto would let the panel grow past its row
+     and push the composer out of view; pin it to the row instead. */
+  min-height: 0;
 }
 
 .chat-header {
@@ -414,6 +417,9 @@ button:disabled {
 
 .chat-messages {
   flex: 1;
+  /* Same trap one level down: without this the list refuses to shrink, the
+     panel overflows instead of the list scrolling, and auto-scroll goes inert. */
+  min-height: 0;
   overflow-y: auto;
   padding: 8px 12px;
 }

@@ -57,6 +57,7 @@ npm scope 为 `@deepseek-ai/dsh-*`；Cordis `Service` 子类和函数插件通�
 | [`examples/`](examples/README.md) | 演示组合包（agent-spine + CLI（命令行界面）/ACP/JSON-RPC bin），由叶节点加载 | 支持：示例基础设施 |
 | [`test-support/`](test-support/README.md) | 支持基础设施（testkit、不变式、回放、Loader 冒烟测试） | 支持：兼容性预期较低 |
 | [`util/`](util/README.md) | 组间共享的低层零依赖工具（`Branded<B>`、Harness home／路径辅助函数、超时、留存） | 支持：小型、稳定、无 harness 依赖 |
+| [`ppc/`](ppc/README.md) | 面向递归 agent harness 的 Propose–Probe–Compose：证据树、可编辑面、propose、probe、compose 与 library 阶段 | 支持：实验性 |
 
 新包加入现有组；新组更新其 README 和此表。
 

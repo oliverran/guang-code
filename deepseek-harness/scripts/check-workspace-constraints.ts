@@ -145,6 +145,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
+  // The PPC surface manifest is the editable surface's canonical form: harness2's Python
+  // substrate reads it instead of repeating the values, so the two trees cannot drift.
+  '@deepseek-ai/dsh-ppc-surface': ['surface-manifest.json'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {

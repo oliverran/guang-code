@@ -40,14 +40,16 @@ export const ChatPanel: React.FC<Props> = ({ backend, projectPath }) => {
   const send = async (text: string) => {
     if (!backend.running || sending) return;
     if (!projectPath) return;
-    // Pre-allocate a request id so the renderer can wire up events immediately
-    const reqId = `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-    startRequest(reqId, text);
+    // The preload bridge mints the request id and stamps it on every event of this
+    // stream, so the pending message must be keyed by the id it returns: an id
+    // invented here never matches, and every event is dropped on the floor.
     try {
-      await window.guang.chat.start(null, text, { cwd: projectPath });
-      // Real requestId from main replaces ours once returned; for simplicity we
-      // assume they match (preload returns the same id we generated).
+      const reqId = await window.guang.chat.start(null, text, { cwd: projectPath });
+      startRequest(reqId, text);
     } catch (err) {
+      // No stream exists to key against, so surface the failure on a local id.
+      const reqId = `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      startRequest(reqId, text);
       applyEvent(reqId, { type: 'error', message: String(err) });
       finishRequest(reqId);
     }

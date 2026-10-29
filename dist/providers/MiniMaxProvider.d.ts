@@ -3,7 +3,8 @@ export declare class MiniMaxProvider implements LLMProvider {
     readonly id: "minimax";
     private apiKey;
     private baseUrl;
-    constructor(apiKey: string, baseUrl?: string);
+    private reasoningEffort;
+    constructor(apiKey: string, baseUrl?: string, reasoningEffort?: string);
     streamChat(opts: {
         model: string;
         system: string;

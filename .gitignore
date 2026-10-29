@@ -48,6 +48,13 @@ __lsremote.txt
 *.swo
 *~
 
+# IDE build output & Electron runtime data (generated, never commit)
+ide/dist/
+.electron-data/
+
+# Generated coverage reports
+deepseek-harness/coverage-*/
+
 # OS
 .AppleDouble
 .LSOverride

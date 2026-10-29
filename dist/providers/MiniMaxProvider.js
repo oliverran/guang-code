@@ -8,10 +8,12 @@ export class MiniMaxProvider {
     id = 'minimax';
     apiKey;
     baseUrl;
-    constructor(apiKey, baseUrl) {
+    reasoningEffort;
+    constructor(apiKey, baseUrl, reasoningEffort) {
         this.apiKey = apiKey;
         // Use the provided base URL, or fallback to the default global one
         this.baseUrl = baseUrl || MINIMAX_BASE_URL;
+        this.reasoningEffort = reasoningEffort || undefined;
     }
     async *streamChat(opts) {
         const { model, system, messages, tools, signal } = opts;
@@ -72,6 +74,8 @@ export class MiniMaxProvider {
             tool_choice: toolDefs.length > 0 ? 'auto' : undefined,
             stream: true,
             max_tokens: 8096,
+            // Dropped by JSON.stringify when unset, so this costs nothing by default
+            reasoning_effort: this.reasoningEffort,
         };
         try {
             // Clean up the trailing slash if user provided one in baseUrl
