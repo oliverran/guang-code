@@ -14,7 +14,7 @@ P0 Memory 多后端 + P2（4.3 Session ES / 4.4 Waterfall / 4.5 Skills / 4.6 Com
 
 ### Added
 
-#### 4.3 Session Event-Sourcing（[sessionES.js](file:///c:/Users/olive/guang-code/dist/utils/sessionES.js)）
+#### 4.3 Session Event-Sourcing（[sessionES.js](dist/utils/sessionES.js)）
 
 - 新增 `SessionEventStore`：27 种领域事件（`session.created|forked|archived|restored`、`message.appended|role_override|trimmed`、`tool.start|result|error|interrupted|permission_denied`、`compaction.before|after|strategy_changed`、`memory.saved|recalled|backend_switched`、`plugin.proposed|approved|rejected|activated|deactivated|errored`、`skill.loaded|injected`、`model.changed`、`usage.ticked`）
 - 新增 `JSONL append-only` + `SHA-256 哈希链`（每事件 `prevHash` = `sha256(prevRaw)`），杜绝静默篡改
@@ -22,7 +22,7 @@ P0 Memory 多后端 + P2（4.3 Session ES / 4.4 Waterfall / 4.5 Skills / 4.6 Com
 - 新增 `Fork` 语义：`/session fork` 时 `forkOptions.keepMessages` 决定投影重放起点，事件永不丢失
 - 新增 `Audit`：任意 event log → 离线重放还原 session（含 compaction 前后痕迹）
 
-#### 4.4 Tool 4-Phase Waterfall（[toolPipeline.js](file:///c:/Users/olive/guang-code/dist/utils/toolPipeline.js)）
+#### 4.4 Tool 4-Phase Waterfall（[toolPipeline.js](dist/utils/toolPipeline.js)）
 
 - 新增 `ToolPipeline`：**pre → execute → post → error** 4 阶段洋葱模型（plugin 可挂入 pre/post）
 - 新增 9 内置监听器：
@@ -37,7 +37,7 @@ P0 Memory 多后端 + P2（4.3 Session ES / 4.4 Waterfall / 4.5 Skills / 4.6 Com
   9. `pluginPostListener`
 - 新增 `PipelineAbortError(replacementResult)`：pre 阶段可直接短路返回替换结果，不再执行真实 tool
 
-#### 4.5 5-Scope Skill Loader（[skillLoader.js](file:///c:/Users/olive/guang-code/dist/utils/skillLoader.js) · [skills.js](file:///c:/Users/olive/guang-code/dist/utils/skills.js)）
+#### 4.5 5-Scope Skill Loader（[skillLoader.js](dist/utils/skillLoader.js) · [skills.js](dist/utils/skills.js)）
 
 - 新增 **5 层作用域**（数字越小优先级越低，scope 近的覆盖 scope 远的）：
   | 层级 | Scope | 目录示例 | 优先级 |
@@ -51,7 +51,7 @@ P0 Memory 多后端 + P2（4.3 Session ES / 4.4 Waterfall / 4.5 Skills / 4.6 Com
 - 新增 `inject API`：`/skill inject <name> <md|skillFile>` 运行时写 session scope，可覆盖同名
 - 新增可选 `fs.watch` 热重载：project/global 目录修改秒级生效（默认关，`/skill watch on`）
 
-#### 4.6 Compaction Seam（[compaction.js](file:///c:/Users/olive/guang-code/dist/utils/compaction.js)）
+#### 4.6 Compaction Seam（[compaction.js](dist/utils/compaction.js)）
 
 - 新增 `SessionCompactor` 抽象 + `CompactorRegistry`：默认内置 4 策略
   1. `keep_last(n)`：仅保留最后 n 条，最省 token
@@ -61,7 +61,7 @@ P0 Memory 多后端 + P2（4.3 Session ES / 4.4 Waterfall / 4.5 Skills / 4.6 Com
 - 新增 `usage 持久化`：每次 compaction 记 `strategy / inputTokens / outputTokens / removedCount / savedAt` 到 projection，配合 `MessagesTrimmed` 事件可追溯"删了什么"
 - 新增 `/compact strategy <name> [params]`、`/compact now`、`/compact history <N>` 三条 slash
 
-#### 4.7 Runtime Plugin 自修改扩展（[pluginManager.js](file:///c:/Users/olive/guang-code/dist/utils/pluginManager.js) · [pmContext.js](file:///c:/Users/olive/guang-code/dist/utils/pmContext.js)）
+#### 4.7 Runtime Plugin 自修改扩展（[pluginManager.js](dist/utils/pluginManager.js) · [pmContext.js](dist/utils/pmContext.js)）
 
 - 新增 2 种 frontmatter：
   - **YAML frontmatter**（`--- yaml ... ---`，传统）
@@ -72,7 +72,7 @@ P0 Memory 多后端 + P2（4.3 Session ES / 4.4 Waterfall / 4.5 Skills / 4.6 Com
 - 新增 Plugin API：`api.registerTool(name,schema,fn)` + `api.hook('pre'|'post', matcher, fn)` + `api.logger.*` + `api.emitUsage(tok)`
 - 新增 4 条 slash：`/plugin propose|activate|deactivate|list`
 
-#### 4.8 MCP / ACP / JSON-RPC 完整互操作 SDK（[sdkInterop.js](file:///c:/Users/olive/guang-code/dist/utils/sdkInterop.js)）
+#### 4.8 MCP / ACP / JSON-RPC 完整互操作 SDK（[sdkInterop.js](dist/utils/sdkInterop.js)）
 
 - 新增 **3 协议 × 3 传输**矩阵：
   - 协议：`JSON-RPC 2.0`（req/resp + notify）/ `MCP`（tools/list + call + notifications）/ `ACP pubsub`（pub/sub/topics）
@@ -83,26 +83,26 @@ P0 Memory 多后端 + P2（4.3 Session ES / 4.4 Waterfall / 4.5 Skills / 4.6 Com
 
 #### P0 Memory 多后端 & 领域化 KV
 
-- 新增 **多后端可切换**：`StorageRegistry`（[storage/index.js](file:///c:/Users/olive/guang-code/dist/utils/storage/index.js)）内置 JSON（[json.js](file:///c:/Users/olive/guang-code/dist/utils/storage/json.js)）/ SQLite FTS5（[sqlite.js](file:///c:/Users/olive/guang-code/dist/utils/storage/sqlite.js)）2 实现，统一 `put/get/list/del/search/close` 接口
-- 新增 **领域化 KV**：Memory 拆 4 域 `sessions / skills / plugins / usage`（[memoryDomain.js](file:///c:/Users/olive/guang-code/dist/utils/memoryDomain.js)），每域独立 key 前缀，避免和任意 KV 混存
-- 新增 **MCP 记忆后端外挂**（[mcpMemoryBackend.js](file:///c:/Users/olive/guang-code/dist/utils/mcpMemoryBackend.js)）：只要对端 MCP server 提供最小 3 方法集（`memory_get / memory_put / memory_list_prefix`）即可无缝挂接
+- 新增 **多后端可切换**：`StorageRegistry`（[storage/index.js](dist/utils/storage/index.js)）内置 JSON（[json.js](dist/utils/storage/json.js)）/ SQLite FTS5（[sqlite.js](dist/utils/storage/sqlite.js)）2 实现，统一 `put/get/list/del/search/close` 接口
+- 新增 **领域化 KV**：Memory 拆 4 域 `sessions / skills / plugins / usage`（[memoryDomain.js](dist/utils/memoryDomain.js)），每域独立 key 前缀，避免和任意 KV 混存
+- 新增 **MCP 记忆后端外挂**（[mcpMemoryBackend.js](dist/utils/mcpMemoryBackend.js)）：只要对端 MCP server 提供最小 3 方法集（`memory_get / memory_put / memory_list_prefix`）即可无缝挂接
 - 新增 `/memory backend <jsonl|sqlite|mcp [serverName]` slash：运行时热切换，写入自动双写旧 backend
-- 新增 `Secret Scanning`（[secretScanner.js](file:///c:/Users/olive/guang-code/dist/utils/secretScanner.js)）：6 种正则 + 任何 put 前扫描，命中则抛错拒绝入库
+- 新增 `Secret Scanning`（[secretScanner.js](dist/utils/secretScanner.js)）：6 种正则 + 任何 put 前扫描，命中则抛错拒绝入库
 
 #### P0 Web UI 直接对话
 
-- 新增 `GuangWebServer`（[webServer.js](file:///c:/Users/olive/guang-code/dist/utils/webServer.js)）：Node 原生 http（无 express 依赖），默认端口 `5173`，支持 `/` / `/ui/*` 静态 + `/api/ui/chat` SSE
-- 新增单文件 SPA（[dist/ui/index.html](file:///c:/Users/olive/guang-code/dist/ui/index.html)）5 Tab：
+- 新增 `GuangWebServer`（[webServer.js](dist/utils/webServer.js)）：Node 原生 http（无 express 依赖），默认端口 `5173`，支持 `/` / `/ui/*` 静态 + `/api/ui/chat` SSE
+- 新增单文件 SPA（[dist/ui/index.html](dist/ui/index.html)）5 Tab：
   - **Chat**：Composer（textarea Enter 发送 / Shift-Enter 换行，Stop 按钮 AbortController），ReadableStream 按 `\n\n` 切帧，`reRenderLastMsg` 增量无闪烁渲染
   - **Sessions**：侧栏 session 列表 + `＋ New Chat`，切会话自动 restore projection；event log 面板实时追加
   - **Skills / Plugins / SDK**：只读展示当前加载的 scope、已 activated 插件、SDK endpoints/capabilities
 - 新增 Chat **9 类 SSE 事件**：`session / user_message / text_delta / tool_start / tool_done / permission_request / done / error / final`
 - 新增 Chat 默认权限策略：bash / write / delete / sendMessage / agentTool 默认 deny，其余 allow；`final` 事件返回完整 `{sessionId, messages, tokens, error?}`
-- 新增 `/ui start|stop|status|open` slash 命令（[slashCommands.js](file:///c:/Users/olive/guang-code/dist/commands/slashCommands.js)）
+- 新增 `/ui start|stop|status|open` slash 命令（[slashCommands.js](dist/commands/slashCommands.js)）
 
 #### Query Engine + 跨模块打通
 
-- 升级 `QueryEngine.runQuery`（[QueryEngine.js](file:///c:/Users/olive/guang-code/dist/utils/QueryEngine.js)）：统一回调签名 `{onStreamChunk,onPermissionRequest,onTool,onUsage,onFinal}`，Web/SSE/SDK 复用同一回调集合
+- 升级 `QueryEngine.runQuery`（[QueryEngine.js](dist/utils/QueryEngine.js)）：统一回调签名 `{onStreamChunk,onPermissionRequest,onTool,onUsage,onFinal}`，Web/SSE/SDK 复用同一回调集合
 - 升级 `slashCommands`：`/memory` 组、`/compact` 组、`/plugin` 组、`/skill` 组、`/ui` 组、`/sdk` 组、`/session fork|audit|replay`
 
 ### Changed
@@ -110,7 +110,7 @@ P0 Memory 多后端 + P2（4.3 Session ES / 4.4 Waterfall / 4.5 Skills / 4.6 Com
 - [BREAKING] Session 持久化格式：JSON blob 单文件 → `session/<id>/events.jsonl(.br) + projection.json + segments/`，旧 session 首次启动会被 `migrateSessionV1ToV2`（`sessionStorage.js`）自动迁移并留备份 `<id>.v1.bak.json`
 - [BREAKING] Compaction 从内置"固定 auto trim"策略升级为 `hybrid` 默认 + 可替换 seam，默认触发阈值 `messages.length > 40 || totalTokens > 32000` 可调
 - Skills 加载：同步一次性读目录 → 启动时 digests diff + 按 scope 覆盖；不再重复加载 builtin（除非 digests 变化）
-- `/ui` 路由：之前演示用的 `GET /chat` 统一为 `GET /` → [index.html](file:///c:/Users/olive/guang-code/dist/ui/index.html)，`POST /api/ui/chat` 为唯一 Chat 入口
+- `/ui` 路由：之前演示用的 `GET /chat` 统一为 `GET /` → [index.html](dist/ui/index.html)，`POST /api/ui/chat` 为唯一 Chat 入口
 
 ### Fixed
 
@@ -124,7 +124,7 @@ P0 Memory 多后端 + P2（4.3 Session ES / 4.4 Waterfall / 4.5 Skills / 4.6 Com
 - Tool Pipeline 中段放 `permissionGate + secretRedaction`（遵循 pipeline 中段最严原则）：任何 tool 入参/出参都必须过
 - BasicVmSandbox deny-by-default：没列在 import 白名单里的内置模块一律抛 `SecurityError`
 - FileAccessPolicy 默认只允许 `<repo>/.guang-code/plugins-out/` 写入，跨盘 / 父目录穿越一律拒绝
-- `.gitignore` 现覆盖：`.guang-code / state / compaction / audit / plugins-out / __wip_local / __smoke_* / .env* / *.pem`（见 [.gitignore](file:///c:/Users/olive/guang-code/.gitignore)）
+- `.gitignore` 现覆盖：`.guang-code / state / compaction / audit / plugins-out / __wip_local / __smoke_* / .env* / *.pem`（见 [.gitignore](.gitignore)）
 
 ---
 
