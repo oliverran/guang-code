@@ -262,6 +262,7 @@ export class SessionEventStore {
   constructor(opts) {
     this._base = opts?.baseDir ?? BASE_DIR();
     this._open = new Map();
+    this._pendingAppends = new Map();
     this._subscribers = new Map(); // sessionId -> Set<fn>
     this._globalSubs = new Set();
   }
@@ -302,8 +303,27 @@ export class SessionEventStore {
   }
 
   async appendEvent(sessionId, ev) {
+    // Serialize writers in this store so simultaneous appends cannot reuse a
+    // sequence number or race the legacy/snapshot file replacement.
+    const previous = this._pendingAppends.get(sessionId) ?? Promise.resolve();
+    const pending = previous.catch(() => {}).then(() => this._appendEvent(sessionId, ev));
+    this._pendingAppends.set(sessionId, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this._pendingAppends.get(sessionId) === pending) this._pendingAppends.delete(sessionId);
+    }
+  }
+
+  async _appendEvent(sessionId, ev) {
     const key = sessionId;
-    const state = this._open.get(key) ?? { seq: 0, lastHash: null, dirty: 0, dir: sessionDir(sessionId, this._base) };
+    let state = this._open.get(key);
+    if (!state) {
+      // A process restart or unload removes only in-memory state. Continue the
+      // durable sequence and hash chain instead of starting again at sequence 1.
+      const projection = await this.getProjection(sessionId);
+      state = { seq: projection.lastEventSeq, lastHash: projection.lastEventHash, dirty: 0, dir: sessionDir(sessionId, this._base) };
+    }
     await ensureDirP(state.dir);
     const num = ev;
     num.sessionId = sessionId;

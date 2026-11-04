@@ -618,9 +618,9 @@
       const model = modelSel.value || undefined;
       ta.value = '';
 
-      // Build messages list for the request
+      // Keep display history locally; the server owns persisted conversation history.
       const baseSessionId = state.selectedSessionId;
-      // Use live messages list as the source of truth (already updated with prior turns)
+      // Use live messages to keep prior turns visible while streaming.
       const messagesToSend = state._liveMessages && state._liveMessages.sessionId === baseSessionId
         ? state._liveMessages.items.filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content || '', toolCalls: m.toolCalls }))
         : chatMessagesFromSession(state.selectedSession).filter(m => m.role !== 'system').map(m => ({ role: m.role, content: m.content || '' }));
@@ -632,7 +632,6 @@
         liveMsgs = state._liveMessages.items;
       }
       pushLive(userMsg);
-      messagesToSend.push({ role: 'user', content: text });
 
       // empty assistant waiting message
       const assistant = { role: 'assistant', content: '', createdAt: Date.now(), toolCalls: [] };
@@ -644,7 +643,7 @@
 
       try {
         const ctrl = new AbortController(); streamAbort = ctrl;
-        const body = { message: text, sessionId: baseSessionId || undefined, model, messages: baseSessionId ? messagesToSend : undefined };
+        const body = { message: text, sessionId: baseSessionId || undefined, model };
         const res = await fetch(BASE + '/api/ui/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
