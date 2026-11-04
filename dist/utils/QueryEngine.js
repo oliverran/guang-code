@@ -676,21 +676,28 @@ function filterProviderToolsByAllowedTools(history, tools) {
 }
 function sessionMessagesToChatMessages(messages) {
     const result = [];
+    let previousWasToolTranscript = false;
     for (const msg of messages) {
-        if (msg.toolUseId)
-            continue; // already embedded in history via chatHistory
+        // chatHistory is rebuilt for every query. Keep the saved, sanitized
+        // tool transcripts as text so later turns retain earlier evidence.
+        // Do not reconstruct native calls from display text or replay tools.
         if (msg.role === 'system')
             continue;
         const content = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
         if (!content.trim())
             continue;
         const last = result[result.length - 1];
-        if (last && last.role === msg.role && typeof last.content === 'string') {
+        // An interrupted turn may end with a user-role tool result. Keep the
+        // next user prompt separate so intent/budget/tool filters still see it.
+        const isToolTranscript = Boolean(msg.toolUseId);
+        if (last && last.role === msg.role && typeof last.content === 'string'
+            && !isToolTranscript && !previousWasToolTranscript) {
             last.content = last.content + '\n' + content;
         }
         else {
             result.push({ role: msg.role, content });
         }
+        previousWasToolTranscript = isToolTranscript;
     }
     return result;
 }
