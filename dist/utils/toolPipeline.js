@@ -70,15 +70,9 @@ export class ToolPipeline {
         throw e;
       })();
       try {
-        const [result] = await Promise.allSettled([next(), timeoutP]).then(async (results) => {
-          ac.abort();
-          const execRes = results[0];
-          const tRes    = results[1];
-          if (execRes.status === 'rejected') throw execRes.reason;
-          if (tRes.status === 'rejected' && tRes.reason?.aborted) throw tRes.reason;
-          return [execRes.value];
-        });
-        return result;
+        // Return the first result, not after both the tool and deadline settle.
+        // The race observes late rejections; the finally block cancels the timer.
+        return await Promise.race([next(), timeoutP]);
       } finally {
         try { ac.abort(); } catch {}
       }
