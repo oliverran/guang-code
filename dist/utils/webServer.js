@@ -109,12 +109,16 @@ export class GuangWebServer extends EventEmitter {
         try { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: err.message || String(err) })); } catch {}
       }
     });
-    this.server.on('listening', () => { this._started = true; this.emit('listening', { port: this.port, host: this.host }); });
+    this.server.on('listening', () => {
+      this.port = this.server.address().port;
+      this._started = true;
+      this.emit('listening', { port: this.port, host: this.host });
+    });
     this.server.on('close', () => { this._started = false; this.emit('close'); });
   }
 
   async start(port, host) {
-    if (port) this.port = port;
+    if (port !== undefined) this.port = port;
     if (host) this.host = host;
     return new Promise((resolve, reject) => {
       const onErr = (e) => reject(e);

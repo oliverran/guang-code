@@ -5,30 +5,66 @@
 //    node scripts/start-ui.mjs --port=5173
 //    node scripts/start-ui.mjs --host=0.0.0.0 --port=8080 --public
 //    node scripts/start-ui.mjs --no-open   (skip browser auto-open)
+//    node scripts/start-ui.mjs --cwd "/path/to/my project" --no-open
+//    node scripts/start-ui.mjs --help
 // ============================================================
 import { spawn } from 'node:child_process';
+import { realpath, stat } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { parseArgs as parseNodeArgs } from 'node:util';
 import path from 'node:path';
-import os from 'node:os';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const hostOs = process.platform;
 
-function parseArgs(argv) {
-  const out = { port: 5173, host: '127.0.0.1', public: false, open: true };
-  for (const a of argv.slice(2)) {
-    if (a === '--public') { out.public = true; out.host = '0.0.0.0'; continue; }
-    if (a === '--no-open') { out.open = false; continue; }
-    const m = a.match(/^--(port|host)=([^\s]+)$/);
-    if (m) {
-      if (m[1] === 'port') out.port = Number(m[2]) || 5173;
-      else out.host = m[2];
-    }
+export function parseArgs(argv) {
+  const { values, tokens } = parseNodeArgs({
+    args: argv,
+    strict: true,
+    allowPositionals: false,
+    tokens: true,
+    options: {
+      cwd: { type: 'string' },
+      port: { type: 'string', default: '5173' },
+      host: { type: 'string' },
+      public: { type: 'boolean', default: false },
+      'no-open': { type: 'boolean', default: false },
+      help: { type: 'boolean', short: 'h', default: false },
+    },
+  });
+  if (!/^\d+$/.test(values.port) || Number(values.port) > 65535) {
+    throw new Error('--port must be an integer between 0 and 65535 (0 selects a free port).');
   }
-  return out;
+  if (values.cwd !== undefined && !values.cwd) throw new Error('--cwd requires a directory path.');
+  if (values.host !== undefined && !values.host.trim()) throw new Error('--host requires a hostname or IP address.');
+  let host = '127.0.0.1';
+  for (const token of tokens) {
+    if (token.name === 'public') host = '0.0.0.0';
+    if (token.name === 'host') host = token.value;
+  }
+  return {
+    cwd: values.cwd === undefined ? projectRoot : path.resolve(values.cwd),
+    port: Number(values.port), host, public: values.public,
+    open: !values['no-open'], help: values.help,
+  };
 }
+
+const HELP = `Usage: npm run ui -- [options]
+
+Options:
+  --cwd <path>    Project directory (default: the guang-code repository)
+  --port <port>   Port 0-65535 (default: 5173; 0 selects a free port)
+  --host <host>   Bind address (default: 127.0.0.1)
+  --public       Bind to 0.0.0.0; no authentication is provided
+  --no-open      Do not open a browser automatically
+  -h, --help     Show this help without starting a server
+
+Values also accept --name=value. Quote paths containing spaces.
+Relative --cwd paths are resolved from the launcher's working directory.
+Keep this unauthenticated service local; do not expose it to the internet.
+`;
 
 function openBrowser(url) {
   try {
@@ -39,7 +75,19 @@ function openBrowser(url) {
   } catch { return false; }
 }
 
-async function main() {
+export async function main(argv = process.argv.slice(2)) {
+  const opts = parseArgs(argv);
+  if (opts.help) {
+    process.stdout.write(HELP);
+    return;
+  }
+  let project;
+  try { project = await stat(opts.cwd); }
+  catch (err) {
+    throw new Error(`Cannot access project directory "${opts.cwd}": ${err.code || err.message}`);
+  }
+  if (!project.isDirectory()) throw new Error(`Project path is not a directory: "${opts.cwd}"`);
+
   // 进程级兜底：防止未捕获异常/未处理 Promise rejection 导致服务直接崩。
   // 打印错误后保持 event loop，让用户能再试 + 有机会查日志。
   process.on('uncaughtException', (err, origin) => {
@@ -61,7 +109,6 @@ async function main() {
   process.on('SIGTERM', () => process.exit(0));
   process.on('SIGINT', () => process.exit(0));
 
-  const opts = parseArgs(process.argv);
   const webServerModule = pathToFileURL(path.join(projectRoot, 'dist', 'utils', 'webServer.js')).href;
   const { startWebServer } = await import(webServerModule);
 
@@ -71,10 +118,10 @@ async function main() {
     '  ║            Guang Code - Web UI Server                    ║',
     '  ╚══════════════════════════════════════════════════════════╝',
     '',
-    `  Project : ${projectRoot}`,
+    `  Project : ${opts.cwd}`,
     `  Host    : ${opts.host}`,
     `  Port    : ${opts.port}`,
-    opts.public ? `  Mode    : public (allow LAN connections)` : `  Mode    : local-only (127.0.0.1)`,
+    `  Access  : no authentication; keep the service local`,
     '',
     '  Starting server...',
     '',
@@ -82,7 +129,7 @@ async function main() {
   process.stdout.write(banner);
 
   try {
-    const result = await startWebServer({ cwd: projectRoot, port: opts.port, host: opts.host });
+    const result = await startWebServer({ cwd: opts.cwd, port: opts.port, host: opts.host });
     const url = result.url;
     process.stdout.write([
       `  ✅  ${result.existing ? 'Already running' : 'Started successfully'}`,
@@ -112,4 +159,10 @@ async function main() {
     process.exit(1);
   }
 }
-main();
+const entryPath = process.argv[1] ? await realpath(process.argv[1]).catch(() => null) : null;
+if (entryPath === __filename) {
+  main().catch(err => {
+    process.stderr.write(`\n  ❌  ${err.message || err}\n  Use --help for available options.\n`);
+    process.exitCode = 1;
+  });
+}

@@ -70,8 +70,10 @@ npm run ui -- --no-open
 打开终端输出的地址，默认是 `http://127.0.0.1:5173`。界面包含 Chat、Sessions、Skills、Plugins 和 SDK 页面。选择与 API key 匹配的模型后再发送消息。
 
 - 改端口：`npm run ui -- --port=8080 --no-open`
+- 操作自己的项目：`npm run ui -- --cwd "/path/to/your project" --no-open`
+- 查看启动参数：`npm run ui -- --help`（不会启动服务）
 - 停止服务：在启动它的终端按 `Ctrl+C`
-- 默认工作目录是 **guang-code 仓库本身**。要操作其他项目，优先使用终端的 `--cwd`。
+- 未指定 `--cwd` 时，工作目录仍是 **guang-code 仓库本身**。启动时检查输出中的 `Project` 路径；路径不存在或不是目录时会直接报错。
 - Web 的工具审批行为与终端不同，不能假设终端中的操作都能在 Web 中完成。
 
 **请保持本机访问。** 当前 HTTP 服务没有内置登录鉴权，不要将 `--public` 或 `--host=0.0.0.0` 当作可直接对外部署的方案。
@@ -98,7 +100,7 @@ npm run test:smoke
 
 GitHub Actions 会在 Pull Request 和推送到 `main` 时检查 JavaScript 语法，并在 Node.js **22.12.0、22.x、24.x、26.x** 上运行这组测试。每个任务使用 `npm ci --workspaces=false` 从锁文件安装依赖，跳过可选的 Electron workspace。
 
-测试覆盖文件搜索、未安装 ripgrep 时的 Grep 回退、PM 通配符导入、终端 `--help`、Markdown / YAML 加载，以及本机 Web 页面和列表接口。启动测试使用临时目录和隔离环境，不需要 API key，也不会调用模型服务。
+测试覆盖文件搜索、未安装 ripgrep 时的 Grep 回退、PM 通配符导入、终端 `--help`、Markdown / YAML 加载，以及本机 Web 页面和列表接口。Web 启动检查还覆盖项目目录选择、带空格的路径、参数错误、帮助输出和自动分配端口。启动测试使用临时目录和隔离环境，不需要 API key，也不会调用模型服务。
 
 当前 CI 使用 Linux，不包含真实模型响应、浏览器交互或 Electron 构建测试；通过这组检查不代表这些路径已完成验证。
 

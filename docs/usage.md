@@ -98,9 +98,27 @@ node /path/to/guang-code/dist/main.js --model YOUR_MODEL_ID --cwd /path/to/proje
 
 ## 常见问题
 
+### 在 Web UI 中打开自己的项目
+
+从 guang-code 根目录运行，路径中有空格时加引号：
+
+```bash
+npm run ui -- --cwd "/path/to/your project" --no-open
+```
+
+`--cwd <path>` 和 `--cwd=<path>` 都可用。路径必须是已有目录，启动横幅会显示最终使用的 `Project` 路径。未指定时仍使用 guang-code 仓库本身。
+
+相对路径按启动脚本的工作目录解析。通过 `npm run ui` 运行时，npm 使用 guang-code 根目录；不确定时使用绝对路径。也可以从自己的项目目录直接运行：
+
+```bash
+node /path/to/guang-code/scripts/start-ui.mjs --cwd . --no-open
+```
+
+用 `npm run ui -- --help` 查看参数而不启动服务。`--port 8080` 与 `--port=8080` 都可用；`--port=0` 会选择空闲端口，请打开输出中的实际 URL。未知参数和无效端口会直接报错，不会静默改用默认值。
+
 ### 安装提示 `EBADENGINE` 或 Node 版本不支持
 
-运行 `node --version`，使用 Node 22.12 或更新版本。当前锁定依赖的要求高于根包仍声明的 Node 18。
+运行 `node --version`，使用 Node 22.12 或更新版本，与根包和锁文件声明的最低版本保持一致。
 
 ### 找不到模块
 
@@ -116,7 +134,7 @@ Ink UI 需要交互终端。使用普通终端直接启动，不要把交互会�
 
 ### Web UI 已打开，但不能执行与终端相同的操作
 
-当前 Web 后端在权限回调中会拒绝部分高风险工具请求，并不是终端审批 UI 的完整替代。需要在其他项目里进行完整编码工作时，优先用终端入口及 `--cwd`。
+当前 Web 后端在权限回调中会拒绝部分高风险工具请求，并不是终端审批 UI 的完整替代。`--cwd` 只选择项目目录，不会改变权限策略。需要完整的交互审批时，使用终端入口及 `--cwd`。
 
 ### 端口冲突
 
