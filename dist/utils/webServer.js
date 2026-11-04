@@ -187,14 +187,18 @@ export class GuangWebServer extends EventEmitter {
     // Load existing session messages if sessionId provided, otherwise start fresh
     const sessionId = body.sessionId || ('webui-' + randomUUID().slice(0, 12));
     let messages = [];
-    if (Array.isArray(body.messages) && body.messages.length) messages = body.messages.slice();
-    else if (body.sessionId) {
-      try {
-        const proj = await sessionStore.getProjection(sessionId);
-        messages = Array.isArray(proj?.messages) ? proj.messages.slice() : [];
-      } catch { messages = []; }
+    let savedSession = false;
+    if (body.sessionId) {
+      // Saved history retains message IDs and tool results. Browser display
+      // history may be incomplete, stale, or already include the new prompt.
+      const proj = await sessionStore.getProjection(sessionId);
+      savedSession = !!proj?.created;
+      messages = Array.isArray(proj?.messages) ? proj.messages.slice() : [];
     }
-    messages.push({ role: 'user', content: message, createdAt: Date.now() });
+    if (!savedSession && Array.isArray(body.messages)) {
+      messages = body.messages.map(m => ({ ...m, id: m.id || randomUUID() }));
+    }
+    messages.push({ id: randomUUID(), role: 'user', content: message, timestamp: Date.now() });
 
     // Determine model + config
     const cfg = await loadConfig().catch(() => null);

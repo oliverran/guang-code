@@ -12,7 +12,7 @@
     "ui": "node scripts/start-ui.mjs",
     "web": "node scripts/start-ui.mjs",
     "webui": "node scripts/start-ui.mjs",
-    "test:smoke": "node --test tests/first-run.test.mjs",
+    "test:smoke": "node --test tests/first-run.test.mjs tests/session-persistence.test.mjs",
     "ui:status": "node scripts/check-ui.mjs",
     "ui:stop": "node scripts/stop-ui.mjs",
     "install-global": "npm link",

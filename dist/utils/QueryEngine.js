@@ -208,19 +208,34 @@ export async function runQuery(options) {
     ensureSkillLoaderCwd(skillLoader, cwd);
     // Session ID (best-effort infer from first message sessionId tag or random ephemeral)
     const ephemeralSessionId = options.sessionId ?? 'ephemeral-' + randomUUID().slice(0, 8);
+    const messageKey = m => m.id
+        ? 'id:' + m.id
+        // Older Web sessions did not assign message IDs. Recognize their saved
+        // history without changing existing events; new Web messages have IDs.
+        : 'legacy:' + JSON.stringify([m.role, m.content, m.timestamp ?? m.createdAt, m.toolUseId]);
+    const persistedMessages = new Set();
+    let sessionReady = false;
     try {
-      // If ES store doesn't know about it, create one silently
-      const existing = await sessionStore.listSessions();
-      if (!existing.some(s => s.id === ephemeralSessionId)) {
+      const existing = await sessionStore.getProjection(ephemeralSessionId);
+      if (!existing.created) {
         await sessionStore.newSession(cwd, { id: ephemeralSessionId, title: 'From runQuery ' + new Date().toISOString().slice(0,16) });
       }
+      for (const m of existing.messages) persistedMessages.add(messageKey(m));
+      sessionReady = true;
     } catch {}
-    // Emit MessageAdded events for user-provided messages to bootstrap projection
-    try {
-      for (const m of messages || []) {
-        await sessionStore.appendEvent(ephemeralSessionId, makeSessionEvent(ephemeralSessionId, 'MessageAdded', { message: m }));
-      }
-    } catch {}
+    const persistMessages = async items => {
+        if (!sessionReady) return;
+        try {
+            for (const m of items || []) {
+                const key = messageKey(m);
+                if (persistedMessages.has(key)) continue;
+                await sessionStore.appendEvent(ephemeralSessionId, makeSessionEvent(ephemeralSessionId, 'MessageAdded', { message: m }));
+                persistedMessages.add(key);
+            }
+        } catch { /* Session persistence remains best-effort. */ }
+    };
+    // Callers pass the complete conversation on every turn. Append only new IDs.
+    await persistMessages(messages);
     const mcpConfigPath = path.join(cwd, '.guang', 'mcp.json');
     const hooksConfigPath = path.join(cwd, '.guang', 'hooks.json');
     const mcpConfigText = fs.existsSync(mcpConfigPath) ? await readTextIfExists(mcpConfigPath) : null;
@@ -496,6 +511,7 @@ export async function runQuery(options) {
                         break;
                     case 'error':
                         onStreamChunk({ type: 'error', error: chunk.message });
+                        await persistMessages(newMessages);
                         return { messages: newMessages, inputTokens: totalInput, outputTokens: totalOutput };
                 }
             }
@@ -625,16 +641,14 @@ export async function runQuery(options) {
                 toolResults.push({ type: 'tool_result', tool_use_id: tc.id, content: `Tool error: ${e.message}`, is_error: true });
             }
         }
-        // Persist new messages into ES projection (fire-and-forget, best-effort)
-        try {
-            for (const nm of newMessages) {
-                await sessionStore.appendEvent(ephemeralSessionId, makeSessionEvent(ephemeralSessionId, 'MessageAdded', { message: nm }));
-            }
-        } catch {}
+        // Flush each tool iteration without replaying earlier iterations.
+        await persistMessages(newMessages);
         // Feed results back into history
         chatHistory.push({ role: 'user', content: toolResults });
         onStreamChunk({ type: 'tool_start', toolName: '…' }); // re-enter spinner
     }
+    // Plain replies and the final answer after tools also need durable messages.
+    await persistMessages(newMessages);
     onStreamChunk({ type: 'done', inputTokens: totalInput, outputTokens: totalOutput });
     await hooksManager.triggerEvent('SessionEnd', cwd, { totalInput, totalOutput });
     try {
