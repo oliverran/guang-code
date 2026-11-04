@@ -20,7 +20,7 @@ A multi-provider AI coding assistant with a terminal UI, a local web interface, 
 
 ### 1. 安装终端 / Web 依赖
 
-准备 Git、**Node.js 22.12 或更新版本**及随附的 npm。虽然根 `package.json` 仍标注 Node 18，当前锁定的 `commander`、`ink` 等依赖要求更高版本，请按这里的要求准备环境。
+准备 Git、**Node.js 22.12 或更新版本**及随附的 npm。建议使用仍在支持期内的 Node.js LTS 版本；根 `package.json` 和 CI 均以 22.12.0 为最低版本。
 
 ```bash
 git clone https://github.com/oliverran/guang-code.git
@@ -87,6 +87,20 @@ npm run ide
 ```
 
 目前终端面板使用 macOS 的 `/usr/bin/script` 调用方式。Windows / Linux 的桌面功能与安装包需要进一步验证，不能仅凭打包配置推断支持情况。详见 [IDE 开发说明](ide/README.md)。
+
+## 自动化检查
+
+安装终端 / Web 依赖后，可以在本地运行：
+
+```bash
+npm run test:smoke
+```
+
+GitHub Actions 会在 Pull Request 和推送到 `main` 时检查 JavaScript 语法，并在 Node.js **22.12.0、22.x、24.x、26.x** 上运行这组测试。每个任务使用 `npm ci --workspaces=false` 从锁文件安装依赖，跳过可选的 Electron workspace。
+
+测试覆盖文件搜索、未安装 ripgrep 时的 Grep 回退、PM 通配符导入、终端 `--help`、Markdown / YAML 加载，以及本机 Web 页面和列表接口。启动测试使用临时目录和隔离环境，不需要 API key，也不会调用模型服务。
+
+当前 CI 使用 Linux，不包含真实模型响应、浏览器交互或 Electron 构建测试；通过这组检查不代表这些路径已完成验证。
 
 ## 使用边界
 
