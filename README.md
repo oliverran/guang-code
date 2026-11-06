@@ -4,7 +4,7 @@
 
 A multi-provider AI coding assistant with a terminal UI, a local web interface, and an experimental Electron IDE.
 
-[快速开始](#快速开始) · [模型与使用指南](docs/usage.md) · [架构导览](docs/architecture.md) · [桌面 IDE](ide/README.md)
+[五分钟交互教程](docs/tutorial.md) · [快速开始](#快速开始) · [模型与使用指南](docs/usage.md) · [架构导览](docs/architecture.md) · [桌面 IDE](ide/README.md)
 
 ## 适合做什么
 
@@ -15,6 +15,20 @@ A multi-provider AI coding assistant with a terminal UI, a local web interface, 
 - **研究 agent 工作流**：查看工具审批、会话事件、上下文压缩与 MCP 接入的实现，按需扩展。
 
 当前以**克隆仓库后运行**为主。终端是主要入口，Web UI 便于本机查看和交互，Electron IDE 仍是实验性子项目。模型调用需要自己的 API key，费用由对应服务商收取。
+
+## 先体验：无需 API key 的交互教程
+
+想先看工具如何工作，可以用内置小项目体验一次“读代码 → 红测试 → 权限拒绝 → 批准修改 → 绿测试”：
+
+```bash
+# 克隆仓库并进入目录后
+npm ci --workspaces=false
+npm run tutorial
+```
+
+教程在临时副本中真实运行 `Glob`、`Grep`、`Read`、`Edit`、权限 gate 和 Node 测试；最后只有输入 `y` 才会修改副本。**调用顺序和补丁由固定脚本提供，不调用模型**，不需要密钥或发送项目数据。每次结束会清理副本，原始样例可反复练习。
+
+无交互终端时使用 `npm run tutorial -- --auto`，该模式明确采用脚本答案，包括最后的批准。详见[五分钟教程与真实模型练习](docs/tutorial.md)，或直接查看[无依赖购物车样例](examples/cart-total/)。
 
 ## 快速开始
 
@@ -104,6 +118,8 @@ GitHub Actions 会在 Pull Request 和推送到 `main` 时检查 JavaScript 语�
 
 会话回归测试使用离线模型替身，检查普通回复、多轮对话、工具循环、Web 刷新续聊，以及事件存储重开和同进程并发写入。后续提问会保留已保存的工具输入与结果文本，不会因恢复历史而重新执行工具；测试也覆盖拒绝、失败与脱敏结果的保留。它们验证本地消息保存与上下文恢复，不验证真实服务商的响应。
 
+交互教程回归测试还覆盖脚本演示、逐步批准与拒绝、重复运行、退出清理，以及临时目录和环境变量隔离。样例内的两个失败是预期教学输入；教程会确认修复后的四个测试全部通过。
+
 当前 CI 使用 Linux，不包含真实模型响应、浏览器交互或 Electron 构建测试；通过这组检查不代表这些路径已完成验证。
 
 ## 使用边界
@@ -126,3 +142,4 @@ GitHub Actions 会在 Pull Request 和推送到 `main` 时检查 JavaScript 语�
 项目的终端交互和模块设计参考 Claude Code 与 DeepSeek Harness。仓库中的 [`deepseek-harness/`](deepseek-harness/) 是单独的参考代码树，不是运行终端 / Web UI 的必要步骤。
 
 根目录目前没有 `LICENSE` 文件，因此这里不声明整个项目为 MIT。引用的第三方代码与依赖应遵循各自的许可；复用或分发前请确认相应授权。
+
