@@ -12,7 +12,7 @@
     "ui": "node scripts/start-ui.mjs",
     "web": "node scripts/start-ui.mjs",
     "webui": "node scripts/start-ui.mjs",
-    "test:smoke": "node --test tests/first-run.test.mjs tests/session-persistence.test.mjs tests/tool-pipeline.test.mjs tests/tool-history.test.mjs",
+    "test:smoke": "node --test tests/first-run.test.mjs tests/session-persistence.test.mjs tests/tool-pipeline.test.mjs tests/tool-history.test.mjs tests/tutorial.test.mjs",
     "ui:status": "node scripts/check-ui.mjs",
     "ui:stop": "node scripts/stop-ui.mjs",
     "install-global": "npm link",
@@ -20,7 +20,9 @@
     "ide:dev:vite": "cd ide && vite",
     "ide:dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron ide/dist/main/index.js",
     "ide:build": "cd ide && npm run build",
-    "ide:package": "cd ide && npm run package"
+    "ide:package": "cd ide && npm run package",
+    "tutorial": "node scripts/tutorial.mjs",
+    "test:tutorial": "node --test tests/tutorial.test.mjs"
   },
   "type": "module",
   "engines": {

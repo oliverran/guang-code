@@ -1,0 +1,8 @@
+{
+  "name": "guang-code-cart-practice",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test cart.test.js"
+  }
+}
