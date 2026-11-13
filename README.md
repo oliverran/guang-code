@@ -86,7 +86,7 @@ npm run ui -- --no-open
 - 改端口：`npm run ui -- --port=8080 --no-open`
 - 操作自己的项目：`npm run ui -- --cwd "/path/to/your project" --no-open`
 - 查看启动参数：`npm run ui -- --help`（不会启动服务）
-- 停止服务：在启动它的终端按 `Ctrl+C`
+- 停止服务：在启动它的终端按 `Ctrl+C`。若需使用 `npm run ui:stop -- --port 5173`，请先确认该端口属于自己的 Web UI；这个辅助命令停止的是端口监听进程，不会验证应用身份。`npm run ui:stop -- --help` 可安全查看说明。
 - 未指定 `--cwd` 时，工作目录仍是 **guang-code 仓库本身**。启动时检查输出中的 `Project` 路径；路径不存在或不是目录时会直接报错。
 - Web 的工具审批行为与终端不同，不能假设终端中的操作都能在 Web 中完成。
 
@@ -114,7 +114,7 @@ npm run test:smoke
 
 GitHub Actions 会在 Pull Request 和推送到 `main` 时检查 JavaScript 语法，并在 Node.js **22.12.0、22.x、24.x、26.x** 上运行这组测试。每个任务使用 `npm ci --workspaces=false` 从锁文件安装依赖，跳过可选的 Electron workspace。
 
-测试覆盖文件搜索、未安装 ripgrep 时的 Grep 回退、PM 通配符导入、终端 `--help`、Markdown / YAML 加载，以及本机 Web 页面和列表接口。Web 启动检查还覆盖项目目录选择、带空格的路径、参数错误、帮助输出和自动分配端口。启动测试使用临时目录和隔离环境，不需要 API key，也不会调用模型服务。
+测试覆盖文件搜索、未安装 ripgrep 时的 Grep 回退、PM 通配符导入、终端 `--help`、Markdown / YAML 加载，以及本机 Web 页面和列表接口。Web 启动检查还覆盖项目目录选择、带空格的路径、参数错误、帮助输出和自动分配端口。启动测试使用临时目录和隔离环境，不需要 API key，也不会调用模型服务。停止辅助命令的测试覆盖端口参数校验、Windows 精确本地端口匹配和无副作用帮助输出，不会终止真实进程。
 
 会话回归测试使用离线模型替身，检查普通回复、多轮对话、工具循环、Web 刷新续聊，以及事件存储重开和同进程并发写入。后续提问会保留已保存的工具输入与结果文本，不会因恢复历史而重新执行工具；测试也覆盖拒绝、失败与脱敏结果的保留。它们验证本地消息保存与上下文恢复，不验证真实服务商的响应。
 
