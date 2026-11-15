@@ -85,6 +85,7 @@ npm run ui -- --no-open
 
 - 改端口：`npm run ui -- --port=8080 --no-open`
 - 操作自己的项目：`npm run ui -- --cwd "/path/to/your project" --no-open`
+- 检查端口：`npm run ui:status -- --port 5173`（也支持 `GC_UI_PORT`）。仅检查 TCP 监听，不验证应用身份；退出码 `0` 表示检测到监听，`1` 表示未检测到，`2` 表示参数或检测工具错误、状态未知。Unix 需要 `lsof` 或 `ss`，Windows 使用 `netstat`。
 - 查看启动参数：`npm run ui -- --help`（不会启动服务）
 - 停止服务：在启动它的终端按 `Ctrl+C`。若需使用 `npm run ui:stop -- --port 5173`，请先确认该端口属于自己的 Web UI；这个辅助命令停止的是端口监听进程，不会验证应用身份。`npm run ui:stop -- --help` 可安全查看说明。
 - 未指定 `--cwd` 时，工作目录仍是 **guang-code 仓库本身**。启动时检查输出中的 `Project` 路径；路径不存在或不是目录时会直接报错。

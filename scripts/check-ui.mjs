@@ -1,50 +1,75 @@
-// ============================================================
-//  Guang Code — Web UI status checker + port killer helper
-//  Usage:   node scripts/check-ui.mjs
-// ============================================================
-import { exec } from 'node:child_process';
+// Inspect TCP listeners; an occupied port does not prove it belongs to Guang Code.
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-const execAsync = promisify(exec);
-const TARGET_PORT = Number(process.env.GC_UI_PORT) || 5173;
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { parseStopArgs, parseWindowsListeners } from './stop-ui.mjs';
+const execFileAsync = promisify(execFile);
 
-async function netstatWin(port) {
-  try {
-    const { stdout } = await execAsync(`netstat -ano | findstr ":${port}"`);
-    const lines = stdout.trim().split('\n').filter(Boolean);
-    const out = [];
-    for (const ln of lines) {
-      const parts = ln.trim().split(/\s+/);
-      if (parts.length < 5) continue;
-      const local = parts[1];
-      if (!local.endsWith(`:${port}`)) continue;
-      const state = parts[3] ?? '';
-      const pid = parts[4];
-      if (state === 'LISTENING') out.push({ pid, state });
-    }
-    return out;
-  } catch { return []; }
-}
-async function netstatUnix(port) {
-  try {
-    const { stdout } = await execAsync(`lsof -nP -iTCP:${port} -sTCP:LISTEN -F pn 2>/dev/null || ss -tlnp 'sport = :${port}' 2>/dev/null`);
-    const m = stdout.match(/p(\d+)/);
-    return m ? [{ pid: m[1], state: 'LISTENING' }] : [];
-  } catch { return []; }
+export function parseLsofListeners(stdout) {
+  return [...new Set(stdout.split(/\r?\n/).filter(line => /^p[1-9]\d*$/.test(line)))]
+    .map(line => ({ pid: line.slice(1) }));
 }
 
-function whichListening(port) {
-  return process.platform === 'win32' ? netstatWin(port) : netstatUnix(port);
-}
-
-const list = await whichListening(TARGET_PORT);
-if (list.length === 0) {
-  process.stdout.write(`  ⛔  Web UI: NOT running (port ${TARGET_PORT} free)\n  Tip:  npm run ui\n`);
-  process.exit(1);
-} else {
-  process.stdout.write(`  ✅  Web UI: RUNNING on port ${TARGET_PORT}\n`);
-  for (const item of list) {
-    process.stdout.write(`      - PID ${item.pid}  state=${item.state}\n`);
+export function parseSsListeners(stdout, port) {
+  const listeners = [];
+  for (const line of stdout.split(/\r?\n/)) {
+    const [state, , , local] = line.trim().split(/\s+/);
+    if (state !== 'LISTEN' || Number(local?.match(/:(\d+)$/)?.[1]) !== port) continue;
+    const pids = [...line.matchAll(/\bpid=([1-9]\d*)\b/g)].map(match => match[1]);
+    // ss can report a listener without exposing another user's process details.
+    for (const pid of new Set(pids.length ? pids : [null])) listeners.push({ pid });
   }
-  process.stdout.write(`\n  🌐  Open:  http://127.0.0.1:${TARGET_PORT}\n`);
-  process.stdout.write(`  ❌  Stop:  node scripts/stop-ui.mjs   (or kill -TERM ${list[0].pid})\n`);
+  return listeners;
+}
+
+export async function inspectListeners(port, platform = process.platform, run = execFileAsync) {
+  if (platform === 'win32') {
+    const { stdout } = await run('netstat', ['-ano'], { timeout: 5000 });
+    return parseWindowsListeners(stdout, port).map(pid => ({ pid }));
+  }
+  let lsofEmpty = false;
+  try {
+    const { stdout } = await run('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-F', 'pn'], { timeout: 5000 });
+    const listeners = parseLsofListeners(stdout);
+    if (listeners.length) return listeners;
+    lsofEmpty = true;
+  } catch (error) {
+    // lsof uses exit 1 for no matches. Warnings/errors must not become "free".
+    lsofEmpty = error.code === 1 && !String(error.stderr ?? '').trim() && !String(error.stdout ?? '').trim();
+  }
+  try {
+    const { stdout } = await run('ss', ['-tlnp', `sport = :${port}`], { timeout: 5000 });
+    return parseSsListeners(stdout, port);
+  } catch {
+    if (lsofEmpty) return [];
+    throw new Error('Cannot inspect TCP listeners. Install lsof or ss and check permissions.');
+  }
+}
+
+export async function main(args = process.argv.slice(2), env = process.env, inspect = inspectListeners) {
+  const { port, help } = parseStopArgs([
+    ...(env.GC_UI_PORT === undefined ? [] : [`--port=${env.GC_UI_PORT}`]), ...args,
+  ]);
+  if (help) {
+    process.stdout.write('Usage: npm run ui:status -- [--port PORT] [--help]\nDefault port: GC_UI_PORT or 5173. Inspects listeners, not application identity.\n');
+    return 0;
+  }
+  const listeners = await inspect(port);
+  if (!listeners.length) {
+    process.stdout.write(`No TCP listener detected on port ${port}.\nTip: npm run ui\n`);
+    return 1;
+  }
+  process.stdout.write(`TCP port ${port}: LISTENING (application identity not verified).\n`);
+  for (const { pid } of listeners) process.stdout.write(`  PID: ${pid ?? 'unavailable'}\n`);
+  process.stdout.write(`Check: http://127.0.0.1:${port}\nPrefer Ctrl+C in the terminal that started the UI.\n`);
+  return 0;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  try { process.exitCode = await main(); }
+  catch (error) {
+    process.stderr.write(`Status UNKNOWN: ${error.message || error}\n`);
+    process.exitCode = 2;
+  }
 }
